@@ -97,10 +97,11 @@ internal static partial class LocalizationTests
         ctx.Check(strictMissing.Count == 0, $"l10n: every key used in code/XAML exists in both languages ({strictMissing.Count} missing)" +
             (strictMissing.Count > 0 ? "\n      " + string.Join("\n      ", strictMissing.Take(30)) : string.Empty));
 
-        // Ölü çeviriler: hiçbir yerde anılmayan anahtarlar (dinamik kalıplara uyanlar sayılmaz). Bilgi; başarısızlık değil.
+        // Ölü çeviriler: hiçbir yerde anılmayan anahtarlar (dinamik kalıplara uyanlar sayılmaz). Birikmesin diye başarısızlık sayılır.
         var unused = tr.Where(k => !used.Contains(k) && !dynamicParts.Any(d => k.StartsWith(d.Prefix, StringComparison.Ordinal) && (d.Suffix is null || k.EndsWith(d.Suffix, StringComparison.Ordinal))))
             .Order(StringComparer.Ordinal).ToList();
-        Console.WriteLine($"INFO  l10n: {unused.Count} of {tr.Count} keys are not referenced anywhere{(unused.Count > 0 ? ": " + string.Join(", ", unused.Take(60)) : string.Empty)}");
+        ctx.Check(unused.Count == 0, $"l10n: no unreferenced keys ({unused.Count} of {tr.Count})" +
+            (unused.Count > 0 ? ": " + string.Join(", ", unused.Take(60)) : string.Empty));
         return Task.CompletedTask;
     }
 }

@@ -32,3 +32,13 @@ jobs:
 
       - name: Testler (çıkış kodu = başarısız test sayısı)
         run: dotnet run --project tests/CalabaticaTests/CalabaticaTests.csproj -c Release
+
+      # Yayın provası: release.yml'in yaptığını (setup + güncelleme paketi) her PR'da dener ve paketi gerçek
+      # güncelleyici koduyla doğrular; bozuk yayın ancak etiket atılınca anlaşılmasın.
+      - name: Yayın provası (setup + güncelleme paketi + doğrulama)
+        shell: pwsh
+        run: |
+          ./build-installer.ps1 -Version 0.0.1 -Repository "${{ github.repository }}"
+          ./scripts/package-update.ps1 -AppExe artifacts/app/CALABATICA.exe -OutDir artifacts/release
+          dotnet run --project tests/CalabaticaTests/CalabaticaTests.csproj -c Release --no-build -- verify-package --dir artifacts/release --setup artifacts/CALABATICA-Setup-0.0.1.exe --version 0.0.1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

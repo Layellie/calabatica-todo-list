@@ -4,6 +4,12 @@ using CalabaticaTests;
 
 // CALABATICA test çalıştırıcısı (bağımlılıksız). Çıkış kodu = başarısız test sayısı.
 // Paketler Tests\ altında özelliğe göre ayrılmıştır; sıra ve liste Support\Suites.cs'te.
+// Yayın doğrulaması (CI yayın provası ve release.yml): dotnet run --project tests/CalabaticaTests -- verify-package --dir … --setup … --version …
+if (args is ["verify-package", .. var verifyArgs])
+{
+    return await PackageVerification.RunAsync(verifyArgs);
+}
+
 var context = new TestContext();
 
 var thread = new Thread(() =>

@@ -121,7 +121,9 @@ dotnet run --project tests/CalabaticaTests -c Release
 The tests use a temporary folder, a manual clock and fake network/dialogs; they never touch your real data, the registry or the network.
 A UI smoke test opens the real window off-screen (it never takes focus), visits every tab and panel and fails on any WPF binding error.
 Set CALA_UI_SHOTS to a folder to also get a PNG of every screen.
-CI (`.github/workflows/ci.yml`) builds the app and runs the tests on every push and pull request.
+CI (`.github/workflows/ci.yml`) builds the app, runs the tests and does a release dry run (setup + update package,
+verified with the real updater code) on every push and pull request.
+Curation of analyzer rules lives in `.editorconfig` (a few rules are build errors; the rest are off on purpose, with reasons).
 
 See [RELEASING.md](RELEASING.md) for versioning and the release workflow.
 
@@ -140,7 +142,9 @@ CyberTodo/              WPF app (MVVM, CommunityToolkit.Mvvm)
   MiniWindow.xaml       Always-on-top mini mode
   TrayIconHost.cs       System tray icon and notifications
 Installer/              Themed setup program (.NET Framework 4.8)
-tests/CalabaticaTests/  Dependency-free test runner
+tests/CalabaticaTests/  Dependency-free test runner (Tests/ one file per feature, Support/ shared context and fakes);
+                        also `verify-package` for release checks
+scripts/                Packaging used by the release workflow and the CI release dry run
 build-installer.ps1     Builds the app and the installer
 .github/                CI, release workflow (version tags only), Dependabot; actions pinned to commit SHAs
 ```
@@ -151,6 +155,8 @@ build-installer.ps1     Builds the app and the installer
 - The chart, calendar and HUD frames are drawn with plain WPF elements; no chart library
 - Glow effects are limited to two static elements to keep list rendering fast
 - Task lists are virtualized: 2,500 tasks load in about 1 second
+- Startup with 2,500 tasks (each measured on its own, interleaved A/B): the data file is read on a background thread while the
+  window is built (905 -> 785 ms median) and panels that start hidden are created on first use (737 -> 644 ms, 36 % fewer visual elements)
 - Add / complete / delete update the list views incrementally instead of re-sorting everything
   (2,500 tasks, median incl. layout: add 75 → 4 ms, complete 100 → 20 ms)
 - Time comes from an injected TimeProvider, so focus, breaks, reminders and midnight are tested with a manual clock

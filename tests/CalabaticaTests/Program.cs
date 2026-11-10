@@ -3,6 +3,7 @@ using System.Windows.Threading;
 using CyberTodo;
 using CyberTodo.Models;
 using CyberTodo.Services;
+using CyberTodo.Views;
 using CyberTodo.ViewModels;
 
 int failures = 0;
@@ -1176,6 +1177,9 @@ var thread = new Thread(() =>
             win.Show();
             await Idle();
             Check(uiVm.IsOnboardingOpen, "ui: first run shows the onboarding guide");
+            var deferredViews = FindAll<DeferredView>(win);
+            Check(deferredViews.Count == 8 && deferredViews.Count(d => d.IsCreated) == 1 && deferredViews.Single(d => d.IsCreated).ViewType == typeof(OnboardingOverlay),
+                $"ui: hidden panels are not created at startup (8 deferred, created: {string.Join(",", deferredViews.Where(d => d.IsCreated).Select(d => d.ViewType!.Name))})");
             Shot(winRoot0(), "onboarding");
             uiVm.CloseOnboardingCommand.Execute(null);
             foreach (string title in new[] { "Write report #work @today @17:00 !", "Gym *mon,wed,fri @today", "Read book #study ~2" })
@@ -1218,6 +1222,9 @@ var thread = new Thread(() =>
             Check(bindingErrors.Count == 0, $"ui: no binding errors across all tabs/panels ({bindingErrors.Count})" +
                 (bindingErrors.Count > 0 ? "\n      " + string.Join("\n      ", bindingErrors.Distinct().Take(8)) : string.Empty));
             Check(winRoot.ActualWidth > 0 && win.IsLoaded, "ui: main window loaded and laid out off-screen");
+            Check(deferredViews.All(d => d.IsCreated), "ui: every deferred panel is created on first use");
+            Check(deferredViews.Where(d => d.ViewType != typeof(OnboardingOverlay)).All(d => d.Visibility == System.Windows.Visibility.Collapsed || d.IsOpen),
+                "ui: deferred panels follow their open flag");
             System.Diagnostics.PresentationTraceSources.DataBindingSource.Listeners.Remove(bindingListener);
             mini.CloseForShutdown();
             win.Hide();
@@ -1250,6 +1257,19 @@ thread.Start(); thread.Join();
 Directory.Delete(dir, true);
 Console.WriteLine(failures == 0 ? "ALL PASSED" : $"{failures} FAILED");
 return failures;
+
+static List<T> FindAll<T>(System.Windows.DependencyObject root) where T : System.Windows.DependencyObject
+{
+    var found = new List<T>();
+    void Walk(System.Windows.DependencyObject d)
+    {
+        if (d is T match) { found.Add(match); }
+        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(d); i++) { Walk(System.Windows.Media.VisualTreeHelper.GetChild(d, i)); }
+    }
+
+    Walk(root);
+    return found;
+}
 
 static byte[] MakeZip(params (string Name, byte[] Content)[] entries)
 {

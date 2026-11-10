@@ -1,0 +1,17 @@
+# Derleme çıktıları
+bin/
+obj/
+publish/
+artifacts/
+*.zip
+*.sha256
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Kullanıcı verisi yanlışlıkla klasöre kopyalanırsa
+cyber_data*.json

@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- Sadece sistem tepsisi (NotifyIcon) için; .NET Desktop runtime'ın parçası, ek paket değil -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>CyberTodo</RootNamespace>
+    <!-- Exe adı CALABATICA.exe (veri klasörü uyumluluk için %LOCALAPPDATA%\CyberTodo olarak kalır) -->
+    <AssemblyName>CALABATICA</AssemblyName>
+    <!-- App.xaml yok: giriş noktası MainWindow.xaml.cs içindeki Program.Main -->
+    <StartupObject>CyberTodo.Program</StartupObject>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <!-- Exe simgesi (Explorer, kısayol, Başlat menüsü) -->
+    <ApplicationIcon>Assets\calabatica.ico</ApplicationIcon>
+
+    <!--
+      Sürüm: yerel derlemede bu değer kullanılır. GitHub Actions yayın akışı etiketten
+      (ör. v1.1.0) -p:Version=1.1.0 geçirir → başlıktaki "v1.1" GitHub etiketinden gelir.
+    -->
+    <Version>1.0.0</Version>
+    <Product>CALABATICA</Product>
+    <!-- "1.0.0+abc123" gibi commit eki sürüm karşılaştırmasını bozmasın -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+
+    <!--
+      Güncelleme denetimi için GitHub deposu ("kullanici/depo"). Boşken denetim kapalıdır.
+      Yayın akışı bunu otomatik doldurur (-p:GitHubRepository=${{ github.repository }}).
+      Yerelde denemek için buraya yazılabilir.
+    -->
+    <GitHubRepository Condition="'$(GitHubRepository)' == ''"></GitHubRepository>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Derleme anındaki depo bilgisi exe'ye gömülür; UpdateService buradan okur -->
+    <AssemblyMetadata Include="GitHubRepository" Value="$(GitHubRepository)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- WinForms'un örtük using'leri WPF türleriyle (Application, Button, TextBox...) çakışmasın -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pencere / görev çubuğu simgesi (pack URI ile) -->
+    <Resource Include="Assets\calabatica.ico" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    CALABATICA kurulum programı.
+    .NET Framework 4.8: Windows 10/11'de yerleşik → kurulumun kendisi için ön gereksinim yok.
+    Kurulan uygulama framework-dependent (~0,6 MB); .NET 10 Desktop Runtime yoksa setup Microsoft'tan
+    indirir, imzasını doğrular ve kurar.
+    Derleme: build-installer.ps1 (PayloadPath'i o verir).
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <!-- 64-bit süreç: Program Files ve kayıt defteri 64-bit görünümüyle .NET kontrolü doğru yapılsın -->
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <UseWPF>true</UseWPF>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>CalabaticaSetup</RootNamespace>
+    <AssemblyName>CalabaticaSetup</AssemblyName>
+    <ApplicationIcon>..\CyberTodo\Assets\calabatica.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Product>CALABATICA Setup</Product>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!--
+    İki aşamalı derleme (build-installer.ps1):
+      1) UninstallerOnly=true → içinde uygulama OLMAYAN küçük kaldırıcı (Uninstall.exe)
+      2) PayloadPath + UninstallerPath → asıl setup (uygulama + küçük kaldırıcı gömülü)
+    Böylece kurulum klasöründe 72 MB'lık ikinci bir kopya durmaz.
+  -->
+  <ItemGroup Condition="'$(UninstallerOnly)' != 'true'">
+    <EmbeddedResource Include="$(PayloadPath)" LogicalName="payload.exe" Condition="'$(PayloadPath)' != ''" />
+    <EmbeddedResource Include="$(UninstallerPath)" LogicalName="uninstaller.exe" Condition="'$(UninstallerPath)' != ''" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="..\CyberTodo\Assets\calabatica.ico" Link="calabatica.ico" />
+  </ItemGroup>
+
+  <Target Name="CheckPayload" BeforeTargets="BeforeBuild" Condition="'$(UninstallerOnly)' != 'true'">
+    <Error Condition="'$(PayloadPath)' == '' Or !Exists('$(PayloadPath)')"
+           Text="PayloadPath verilmedi ya da dosya yok. Kurulumu build-installer.ps1 ile derleyin." />
+    <Error Condition="'$(UninstallerPath)' == '' Or !Exists('$(UninstallerPath)')"
+           Text="UninstallerPath verilmedi ya da dosya yok. Kurulumu build-installer.ps1 ile derleyin." />
+  </Target>
+
+</Project>

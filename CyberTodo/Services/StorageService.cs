@@ -36,13 +36,18 @@ public sealed class StorageService
     private long _writtenVersion;
 
     /// <summary>Varsayılan konum: %LOCALAPPDATA%\CyberTodo\cyber_data.json.</summary>
+    /// <summary>Veri klasörünü değiştirir (taşınabilir kullanım, kıyaslama/test). Boşsa %LOCALAPPDATA%\CyberTodo.</summary>
+    public const string DataDirectoryVariable = "CALABATICA_DATA_DIR";
+
     public StorageService()
-        : this(Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "CyberTodo",
-            FileName))
+        : this(Path.Combine(DefaultDirectory(), FileName))
     {
     }
+
+    private static string DefaultDirectory() =>
+        Environment.GetEnvironmentVariable(DataDirectoryVariable) is { Length: > 0 } custom
+            ? Path.GetFullPath(custom)
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CyberTodo");
 
     public StorageService(string filePath)
     {

@@ -140,6 +140,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     private Task<LoadResult>? _preload;
 
+    /// <summary>Veri yüklendi ve arayüze işlendi (açılış tamam).</summary>
+    public bool IsInitialized => _initialized;
+
     /// <summary>
     /// Veri dosyasını arka planda okumaya başlar; <see cref="InitializeAsync"/> sonucu bekler. Pencere XAML'i kurulurken
     /// (~430 ms) JSON yüklemesi (~145 ms, ilk çağrıda yansıma kurulumu dahil) paralel biter. Pencereden ÖNCE çağrılır;
@@ -159,6 +162,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             var result = await (_preload ?? _storage.LoadAsync());
             _preload = null;
+            StartupTrace.Mark("json-loaded");
             data = result.Data;
             isNew = result.IsNew;
             if (result.CorruptBackupFile is not null)
@@ -193,6 +197,7 @@ public sealed partial class MainViewModel : ObservableObject
         _initialized = true;
         OnTasksChanged();
         RebuildChart();
+        StartupTrace.Mark("data-applied");
 
         ReadStartupState();
 

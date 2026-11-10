@@ -19,6 +19,8 @@ internal static class Suites
         (nameof(ExtractedClassesTests), ExtractedClassesTests.Run),
         (nameof(LocalizationTests), static ctx => LocalizationTests.Run(ctx)),
         (nameof(NormalizeTests), NormalizeTests.Run),
+        (nameof(QuickAddParserTests), QuickAddParserTests.Run),
+        (nameof(HabitDifferentialTests), HabitDifferentialTests.Run),
         (nameof(PackageVerificationTests), PackageVerificationTests.Run),
         (nameof(LoggingTests), LoggingTests.Run),
         (nameof(UiSmokeTests), UiSmokeTests.Run),

@@ -29,6 +29,22 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // Arka plan thread'lerinde yakalanmamış hata: süreç zaten sonlanıyor, en azından rapor kalsın.
+        AppDomain.CurrentDomain.UnhandledException += static (_, e) =>
+        {
+            if (e.ExceptionObject is Exception ex)
+            {
+                AppLog.WriteCrash(ex, "AppDomain");
+            }
+        };
+
+        // Beklenmemiş (await edilmemiş) Task hataları: uygulamayı düşürmez ama kaybolmasın.
+        TaskScheduler.UnobservedTaskException += static (_, e) =>
+        {
+            AppLog.Error("UnobservedTask", e.Exception);
+            e.SetObserved();
+        };
+
         // Tek örnek: tepside çalışırken exe'ye tekrar tıklanırsa ikinci kopya açılmaz (aynı JSON'a iki yazar olurdu),
         // mevcut pencereye "göster" sinyali gider.
         using var mutex = new Mutex(initiallyOwned: true, MutexName, out bool createdNew);
@@ -66,7 +82,23 @@ public static class Program
 
         bool startHidden = args.Any(static a => string.Equals(a, RegistryStartupRegistration.TrayArgument, StringComparison.OrdinalIgnoreCase));
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-        var window = new MainWindow(startHidden);
+        Themes.ThemeResources.EnsureLoaded(app);
+        // Composition root: servisler burada kurulur; pencere ve ViewModel bunları dışarıdan alır (testte sahteleri verilir).
+        var viewModel = new MainViewModel(
+            new StorageService(),
+            new UpdateService(),
+            new RegistryStartupRegistration(),
+            new WpfFileDialogs(static () => Application.Current?.Windows.OfType<Window>().FirstOrDefault(static w => w.IsActive)),
+            new UpdateInstaller());
+        var window = new MainWindow(viewModel, new TrayIconHost(), startHidden);
+
+        // UI thread'inde yakalanmamış hata: rapor yaz, bekleyen kaydı diske indir, kullanıcıya söyle, düzgün kapan.
+        // Bilinmeyen bir hatadan sonra çalışmaya devam etmek veriyi tutarsız bırakabilir; bu yüzden devam edilmez.
+        app.DispatcherUnhandledException += (_, e) =>
+        {
+            e.Handled = true;
+            window.HandleFatalError(e.Exception);
+        };
 
         var registration = ThreadPool.RegisterWaitForSingleObject(
             showEvent,
@@ -90,7 +122,7 @@ public partial class MainWindow : Window
     private static readonly TimeSpan s_shutdownSaveTimeout = TimeSpan.FromSeconds(3);
 
     private readonly MainViewModel _viewModel;
-    private readonly TrayIconHost _tray;
+    private readonly TrayIconHost? _tray; // null: testlerde tepsi simgesi oluşturulmaz
     private bool _closeConfirmed;
     private bool _exitRequested;
     private bool _trayHintShown;
@@ -98,32 +130,31 @@ public partial class MainWindow : Window
     private CyberTask? _dragCandidate;
     private MiniWindow? _mini;
 
-    public MainWindow(bool startHidden = false)
+    /// <param name="tray">null → tepsi simgesi yok (UI testleri).</param>
+    public MainWindow(MainViewModel viewModel, TrayIconHost? tray, bool startHidden = false)
     {
         InitializeComponent();
 
-        _viewModel = new MainViewModel(
-            new StorageService(),
-            new UpdateService(),
-            new RegistryStartupRegistration(),
-            new WpfFileDialogs(() => IsVisible ? this : null),
-            new UpdateInstaller());
+        _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         DataContext = _viewModel;
 
-        _tray = new TrayIconHost();
-        _tray.ShowRequested += (_, _) => ShowFromTray();
-        _tray.ExitRequested += (_, _) => ExitApplication();
-        _tray.MiniRequested += (_, _) =>
+        _tray = tray;
+        if (_tray is not null)
         {
-            if (_viewModel.IsMiniMode)
+            _tray.ShowRequested += (_, _) => ShowFromTray();
+            _tray.ExitRequested += (_, _) => ExitApplication();
+            _tray.MiniRequested += (_, _) =>
             {
-                ShowMini(); // gizlenmişse geri getir
-            }
-            else
-            {
-                _viewModel.ToggleMiniModeCommand.Execute(null);
-            }
-        };
+                if (_viewModel.IsMiniMode)
+                {
+                    ShowMini(); // gizlenmişse geri getir
+                }
+                else
+                {
+                    _viewModel.ToggleMiniModeCommand.Execute(null);
+                }
+            };
+        }
 
         _viewModel.AttentionRequested += OnAttentionRequested;
         _viewModel.OpenUrlRequested += OnOpenUrlRequested;
@@ -135,12 +166,18 @@ public partial class MainWindow : Window
         StateChanged += OnStateChanged;
 
         // Oturum kapanırken (çıkış/yeniden başlatma): tepsiye gizleme yapılmasın, ertelenmiş kayıt hemen yazılsın.
-        Application.Current.SessionEnding += (_, _) =>
+        if (Application.Current is { } app)
         {
-            _exitRequested = true;
-            _viewModel.FlushNow();
-        };
+            app.SessionEnding += (_, _) =>
+            {
+                _exitRequested = true;
+                _viewModel.FlushNow();
+            };
+        }
 
+        // Windows yüksek kontrast modu: açılışta ve değişince temaya yansır.
+        _viewModel.SetSystemHighContrast(SystemParameters.HighContrast);
+        SystemParameters.StaticPropertyChanged += OnSystemParametersChanged;
         ApplyTheme(Resources, _viewModel.CurrentTheme);
 
         // Loaded yerine: pencere tepside gizli başlasa da veri yüklensin, hatırlatıcılar çalışsın.
@@ -156,6 +193,40 @@ public partial class MainWindow : Window
         {
             TaskTitleBox.Focus();
         }
+    }
+
+    private bool _handlingFatalError;
+
+    /// <summary>Yakalanmamış UI hatası: rapor + acil kayıt + bilgi kutusu + kapanış. İkinci hata gelirse doğrudan kapanır.</summary>
+    public void HandleFatalError(Exception exception)
+    {
+        if (_handlingFatalError)
+        {
+            Application.Current.Shutdown();
+            return;
+        }
+
+        _handlingFatalError = true;
+        string? reportPath = AppLog.WriteCrash(exception, "Dispatcher");
+
+        try
+        {
+            _viewModel.FlushNow(); // kendi I/O hatalarını yakalar; buradaki geniş catch çökme sınırı içindir
+        }
+        catch (Exception flushError)
+        {
+            AppLog.Error("FlushOnCrash", flushError);
+        }
+
+        MessageBox.Show(
+            Localizer.Instance.Format("Crash_Message", reportPath ?? AppLog.Directory),
+            "CALABATICA",
+            MessageBoxButton.OK,
+            MessageBoxImage.Error);
+
+        _mini?.CloseForShutdown();
+        _tray?.Dispose();
+        Application.Current.Shutdown();
     }
 
     /// <summary>Tepsiden / ikinci örnekten / bildirime tıklamadan pencereyi öne getirir (mini moddaysa tam görünüme döner).</summary>
@@ -191,7 +262,7 @@ public partial class MainWindow : Window
         }
 
         await FlushAsync();
-        _tray.Dispose();
+        _tray?.Dispose();
         Application.Current.Shutdown();
     }
 
@@ -212,6 +283,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
+            AppLog.Error("MainWindow", ex);
             // Yeni exe yerinde; bir sonraki elle açılışta yeni sürüm çalışır.
             _viewModel.ErrorMessage = ex.Message;
             return;
@@ -225,7 +297,7 @@ public partial class MainWindow : Window
         }
         else
         {
-            _tray.Dispose();
+            _tray?.Dispose();
             Application.Current.Shutdown();
         }
     }
@@ -262,7 +334,7 @@ public partial class MainWindow : Window
             if (!_trayHintShown)
             {
                 _trayHintShown = true;
-                _tray.Notify(Localizer.Instance["Tray_Running"]);
+                _tray?.Notify(Localizer.Instance["Tray_Running"]);
             }
 
             return;
@@ -277,8 +349,9 @@ public partial class MainWindow : Window
 
     private void OnClosed(object? sender, EventArgs e)
     {
+        SystemParameters.StaticPropertyChanged -= OnSystemParametersChanged; // statik olay: pencereyi canlı tutmasın
         _mini?.CloseForShutdown();
-        _tray.Dispose();
+        _tray?.Dispose();
         Application.Current.Shutdown();
     }
 
@@ -330,6 +403,14 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnSystemParametersChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SystemParameters.HighContrast))
+        {
+            Dispatcher.InvokeAsync(() => _viewModel.SetSystemHighContrast(SystemParameters.HighContrast));
+        }
+    }
+
     private void ShowMini()
     {
         if (_mini is null)
@@ -344,7 +425,7 @@ public partial class MainWindow : Window
                     if (!_trayHintShown)
                     {
                         _trayHintShown = true;
-                        _tray.Notify(Localizer.Instance["Tray_Running"]);
+                        _tray?.Notify(Localizer.Instance["Tray_Running"]);
                     }
                 }
                 else
@@ -434,10 +515,14 @@ public partial class MainWindow : Window
         resources["SecondaryColor"] = palette.Secondary;
         resources["YellowBrush"] = Brush(palette.Primary);
         resources["CyanBrush"] = Brush(palette.Secondary);
-        resources["YellowDimBrush"] = Brush(WithAlpha(palette.Primary, 0x55));
-        resources["CyanDimBrush"] = Brush(WithAlpha(palette.Secondary, 0x66));
-        resources["CyanFaintBrush"] = Brush(WithAlpha(palette.Secondary, 0x1F));
-        resources["AxisTextBrush"] = Brush(Mix(palette.Secondary, Color.FromRgb(0x8A, 0x94, 0xA6), 0.55));
+        // Yüksek kontrast: soluk/gri tonlar okunabilirlik için tam renge ya da açık griye çekilir.
+        bool hc = palette.IsHighContrast;
+        resources["YellowDimBrush"] = Brush(hc ? palette.Primary : WithAlpha(palette.Primary, 0x55));
+        resources["CyanDimBrush"] = Brush(hc ? palette.Secondary : WithAlpha(palette.Secondary, 0x66));
+        resources["CyanFaintBrush"] = Brush(WithAlpha(palette.Secondary, hc ? (byte)0x40 : (byte)0x1F));
+        resources["AxisTextBrush"] = Brush(hc ? Colors.White : Mix(palette.Secondary, Color.FromRgb(0x8A, 0x94, 0xA6), 0.55));
+        resources["GreyBrush"] = Brush(hc ? Color.FromRgb(0xC8, 0xC8, 0xC8) : Color.FromRgb(0x4A, 0x55, 0x68));
+        resources["SubtleTextBrush"] = Brush(hc ? Colors.White : Color.FromRgb(0x8A, 0x94, 0xA6));
         resources["PrimaryDeepBrush"] = Brush(Mix(palette.Primary, Colors.Black, 0.9));
     }
 
@@ -447,7 +532,8 @@ public partial class MainWindow : Window
     /// </summary>
     private async void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        bool dialogOpen = _viewModel.Editor is not null || _viewModel.IsSettingsOpen || _viewModel.IsTemplatesOpen || _viewModel.IsDataOpen;
+        bool dialogOpen = _viewModel.Editor is not null || _viewModel.IsSettingsOpen || _viewModel.IsTemplatesOpen || _viewModel.IsDataOpen
+            || _viewModel.IsOnboardingOpen;
         if (dialogOpen)
         {
             return;
@@ -688,7 +774,7 @@ public partial class MainWindow : Window
 
         if (!IsVisible || WindowState == WindowState.Minimized)
         {
-            _tray.Notify(message);
+            _tray?.Notify(message);
         }
         else if (!IsActive)
         {
@@ -705,6 +791,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
+            AppLog.Error("MainWindow", ex);
             _viewModel.ErrorMessage = ex.Message;
         }
     }

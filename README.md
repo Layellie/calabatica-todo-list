@@ -29,7 +29,7 @@
 - Priorities, categories, due dates and times, notes, subtasks with automatic progress
 - Repeat daily, weekly, monthly or on **selected weekdays** (e.g. Mon/Wed/Fri, weekdays, weekend)
 - Reminders (on time, 15 min, 1 h or 1 day before) with snooze (10 min / 1 h)
-- Search, smart lists (Today / Upcoming / Overdue), category filters
+- Search, smart lists (Today / Upcoming / Overdue), category filters and **saved views** (one click restores search + category + list)
 - Sort by creation, due date or priority, or reorder by **drag and drop**
 - Templates: save the visible tasks as a reusable set
 - Undo the last action (add, complete, reopen, edit, move, delete, apply template) with `Ctrl+Z` or the ↶ button
@@ -45,11 +45,14 @@
 
 **App**
 - Turkish and English interface
-- Five color themes (Neon, Synthwave, Matrix, Amber, Arctic) and three UI scales
+- Five color themes (Neon, Synthwave, Matrix, Amber, Arctic) plus a high-contrast theme that follows Windows high contrast automatically; three UI scales
+- Short first-run guide (reopen any time with ?)
 - Runs in the system tray with Windows notifications; optional start with Windows
 - Mini mode (`Ctrl+M`): small always-on-top window with the timer and today's tasks
 - Updates itself from GitHub Releases: downloads the new version, verifies its SHA256 checksum and restarts
 - Daily automatic backups (last 7 kept), one-click restore, JSON / CSV (Excel) export and JSON import
+- Completed tasks older than 400 days move to yearly archive files, so the data file stays small; totals are kept
+- Local crash reports and error log in %LOCALAPPDATA%\CyberTodo\logs (nothing is sent anywhere)
 - Export tasks with due dates to Google Calendar, Outlook or Apple Calendar (`.ics`)
 - Data stays on your computer (`%LOCALAPPDATA%\CyberTodo\cyber_data.json`), no account and no telemetry
 
@@ -115,7 +118,9 @@ dotnet run --project CyberTodo/CyberTodo.csproj
 dotnet run --project tests/CalabaticaTests -c Release
 ```
 
-The tests use a temporary folder, never touch your real data, the registry or the network.
+The tests use a temporary folder, a manual clock and fake network/dialogs; they never touch your real data, the registry or the network.
+A UI smoke test opens the real window off-screen (it never takes focus), visits every tab and panel and fails on any WPF binding error.
+Set CALA_UI_SHOTS to a folder to also get a PNG of every screen.
 CI (`.github/workflows/ci.yml`) builds the app and runs the tests on every push and pull request.
 
 See [RELEASING.md](RELEASING.md) for versioning and the release workflow.
@@ -124,15 +129,20 @@ See [RELEASING.md](RELEASING.md) for versioning and the release workflow.
 
 ```
 CyberTodo/              WPF app (MVVM, CommunityToolkit.Mvvm)
-  Models/               Tasks, days, settings, themes, templates
-  Services/             JSON storage, localization, update check, Windows startup
-  ViewModels/           Main view model, editor, quick-add parser, stats/calendar builder
-  MainWindow.xaml       UI (no third-party UI or chart libraries)
+  Models/               Tasks, days, settings, themes, templates, saved views
+  Services/             Storage + schema migrations, backups, archive, export (CSV/ICS),
+                        update check/installer, localization, startup, crash log
+  ViewModels/           MainViewModel split by feature (MainViewModel.Tasks.cs, .Focus.cs, .Data.cs, …),
+                        FocusTimer (focus/break state machine), editor, quick-add parser, insights
+  Views/                Panels and overlays as user controls (stats, focus, habits, calendar, settings, …)
+  Themes/Theme.xaml     Shared palette, styles and templates (loaded at application level)
+  MainWindow.xaml       Shell: header, task list, chart, toasts (no third-party UI or chart libraries)
+  MiniWindow.xaml       Always-on-top mini mode
   TrayIconHost.cs       System tray icon and notifications
 Installer/              Themed setup program (.NET Framework 4.8)
 tests/CalabaticaTests/  Dependency-free test runner
 build-installer.ps1     Builds the app and the installer
-.github/workflows/      Release workflow (runs on version tags)
+.github/                CI, release workflow (version tags only), Dependabot; actions pinned to commit SHAs
 ```
 
 ## Tech notes
@@ -141,6 +151,10 @@ build-installer.ps1     Builds the app and the installer
 - The chart, calendar and HUD frames are drawn with plain WPF elements; no chart library
 - Glow effects are limited to two static elements to keep list rendering fast
 - Task lists are virtualized: 2,500 tasks load in about 1 second
+- Add / complete / delete update the list views incrementally instead of re-sorting everything
+  (2,500 tasks, median incl. layout: add 75 → 4 ms, complete 100 → 20 ms)
+- Time comes from an injected TimeProvider, so focus, breaks, reminders and midnight are tested with a manual clock
+- ReadyToRun was measured and left off: ~5 % less startup CPU, no measurable wall-clock gain, twice the exe size
 - Saves are coalesced (400 ms), serialized on the UI thread and written atomically (temp file + move);
   pending changes are flushed on exit and when Windows signs out
 - Backups are written from an in-memory snapshot to `backups\` next to the data file; restore and import

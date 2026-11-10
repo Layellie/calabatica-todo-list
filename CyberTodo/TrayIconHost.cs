@@ -22,7 +22,7 @@ public sealed class TrayIconHost : IDisposable
 
     public TrayIconHost()
     {
-        var resource = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/calabatica.ico"))
+        var resource = Application.GetResourceStream(new Uri("pack://application:,,,/CALABATICA;component/Assets/calabatica.ico"))
             ?? throw new InvalidOperationException("Simge kaynağı bulunamadı.");
         using (var stream = resource.Stream)
         {

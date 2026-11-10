@@ -130,6 +130,7 @@ public enum ThemeId
     Matrix,
     Amber,
     Arctic,
+    HighContrast,
 }
 
 /// <summary>
@@ -138,6 +139,9 @@ public enum ThemeId
 /// </summary>
 public sealed record ThemePalette(ThemeId Id, string Name, Color Primary, Color Secondary)
 {
+    /// <summary>Yüksek kontrast: soluk/gri tonlar da tam renge çekilir (erişilebilirlik; Windows yüksek kontrastta otomatik).</summary>
+    public bool IsHighContrast => Id == ThemeId.HighContrast;
+
     public static IReadOnlyList<ThemePalette> All { get; } =
     [
         new(ThemeId.Neon, "NEON", Color.FromRgb(0xFC, 0xEE, 0x0A), Color.FromRgb(0x00, 0xF0, 0xFF)),
@@ -145,6 +149,7 @@ public sealed record ThemePalette(ThemeId Id, string Name, Color Primary, Color 
         new(ThemeId.Matrix, "MATRIX", Color.FromRgb(0x39, 0xFF, 0x14), Color.FromRgb(0x00, 0xC8, 0x96)),
         new(ThemeId.Amber, "AMBER", Color.FromRgb(0xFF, 0xB0, 0x00), Color.FromRgb(0x00, 0xE5, 0xC7)),
         new(ThemeId.Arctic, "ARCTIC", Color.FromRgb(0xE8, 0xF6, 0xFF), Color.FromRgb(0x4D, 0xA3, 0xFF)),
+        new(ThemeId.HighContrast, "HI-CONTRAST", Color.FromRgb(0xFF, 0xFF, 0x00), Color.FromRgb(0xFF, 0xFF, 0xFF)),
     ];
 
     public static ThemePalette Get(ThemeId id) => All.FirstOrDefault(p => p.Id == id) ?? All[0];
@@ -483,6 +488,9 @@ public sealed class AppSettings
     /// <summary>Mola bitince aynı görevde yeni odak otomatik başlasın.</summary>
     public bool AutoStartNextFocus { get; set; }
 
+    /// <summary>İlk açılış rehberi gösterildi/kapatıldı.</summary>
+    public bool OnboardingDone { get; set; }
+
     /// <summary>Mini pencerenin son konumu (null = ekranın sağ üstü).</summary>
     public double? MiniLeft { get; set; }
 
@@ -560,6 +568,38 @@ public sealed class CyberData
     public List<TaskTemplate> Templates { get; set; } = [];
 
     public List<FocusSession> FocusSessions { get; set; } = [];
+
+    public List<SavedFilter> SavedFilters { get; set; } = [];
+
+    /// <summary>Arşive taşınan tamamlanmış görevlerin özeti (toplam istatistikler arşivden sonra da doğru kalsın).</summary>
+    public ArchiveSummary Archive { get; set; } = new();
+}
+
+/// <summary>Kayıtlı görünüm: arama + kategori + akıllı liste birleşimi ("#iş · BUGÜN").</summary>
+public sealed partial class SavedFilter : ObservableObject
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public string Name { get; set; } = string.Empty;
+
+    public string? Search { get; set; }
+
+    public string? Category { get; set; }
+
+    public SmartView SmartView { get; set; }
+
+    /// <summary>Şu anki filtre bununla aynı mı (çip vurgusu).</summary>
+    [ObservableProperty]
+    [property: JsonIgnore]
+    private bool _isActive;
+}
+
+public sealed class ArchiveSummary
+{
+    public int TaskCount { get; set; }
+
+    /// <summary>Arşivlenen görevlerin odak dakikaları toplamı.</summary>
+    public int TrackedMinutes { get; set; }
 }
 
 /// <summary>

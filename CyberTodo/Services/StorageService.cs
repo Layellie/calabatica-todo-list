@@ -11,7 +11,7 @@ namespace CyberTodo.Services;
 /// Yükleme sonucu. CorruptBackupFile null değilse eski dosya bozuktu ve bu adla yedeklendi;
 /// mesaj dile göre ViewModel'de üretilir.
 /// </summary>
-public sealed record LoadResult(CyberData Data, bool IsNew, string? CorruptBackupFile);
+public sealed record LoadResult(CyberData Data, bool IsNew, string? CorruptBackupFile, int? NewerSchemaVersion = null);
 
 /// <summary>
 /// cyber_data.json okuma/yazma. Yazma işlemleri:
@@ -94,6 +94,11 @@ public sealed class StorageService
             throw new InvalidDataException("Empty JSON.");
         }
 
+        if (data.SchemaVersion > CyberData.CurrentSchemaVersion)
+        {
+            throw new InvalidDataException($"File is from a newer CALABATICA version (schema {data.SchemaVersion} > {CyberData.CurrentSchemaVersion}).");
+        }
+
         Normalize(data);
         return data;
     }
@@ -139,8 +144,10 @@ public sealed class StorageService
             return BackUpCorruptFile();
         }
 
+        // Daha yeni bir uygulama sürümünün dosyası: bilinmeyen alanlar kayıtta kaybolurdu → çağıran kaydı kapatır.
+        int? newer = data.SchemaVersion > CyberData.CurrentSchemaVersion ? data.SchemaVersion : null;
         Normalize(data);
-        return new LoadResult(data, IsNew: false, CorruptBackupFile: null);
+        return new LoadResult(data, IsNew: false, CorruptBackupFile: null, NewerSchemaVersion: newer);
     }
 
     /// <summary>
@@ -238,6 +245,19 @@ public sealed class StorageService
         data.Days ??= [];
         data.Templates ??= [];
         data.FocusSessions ??= [];
+        data.Archive ??= new ArchiveSummary();
+        data.SavedFilters ??= [];
+        data.SavedFilters.RemoveAll(static f => f is null || string.IsNullOrWhiteSpace(f.Name));
+        foreach (var filter in data.SavedFilters)
+        {
+            filter.Name = filter.Name.Length > 80 ? filter.Name[..80] : filter.Name;
+            if (!Enum.IsDefined(filter.SmartView))
+            {
+                filter.SmartView = SmartView.All;
+            }
+        }
+        data.Archive.TaskCount = Math.Max(0, data.Archive.TaskCount);
+        data.Archive.TrackedMinutes = Math.Max(0, data.Archive.TrackedMinutes);
         data.FocusSessions.RemoveAll(static s => s is null || s.Minutes <= 0);
         foreach (var session in data.FocusSessions)
         {
@@ -275,35 +295,7 @@ public sealed class StorageService
             settings.FocusMinutes = 25;
         }
 
-        // v1/v2 → v3: o sürümlerde tamamlanınca daima tahmini süre eklenirdi; geri almada aynısı düşülsün.
-        if (data.SchemaVersion < 3)
-        {
-            foreach (var task in data.Tasks.Where(static t => t.IsCompleted))
-            {
-                task.CompletionCreditHours = task.EstimatedHours;
-            }
-        }
-
-        // v4 → v5: eski sürümler tekrar kopyalarını birbirine bağlamıyordu. Aynı başlık + kategori + tekrar kuralına
-        // sahip tekrarlayan görevler tek zincir sayılır; zincir kimliği en eski kopyanın Id'si (kararlı, tekrar çalışsa da aynı).
-        if (data.SchemaVersion < 5)
-        {
-            var groups = data.Tasks
-                .Where(static t => t is not null && t.Recurrence != Recurrence.None && t.SeriesId is null)
-                .GroupBy(static t => (
-                    Title: (t.Title ?? string.Empty).Trim().ToUpperInvariant(),
-                    Category: (t.Category ?? string.Empty).Trim().ToUpperInvariant(),
-                    t.Recurrence,
-                    t.RepeatDays));
-            foreach (var group in groups)
-            {
-                var seriesId = group.MinBy(static t => t.CreatedAt)!.Id;
-                foreach (var task in group)
-                {
-                    task.SeriesId = seriesId;
-                }
-            }
-        }
+        SchemaMigrations.Apply(data); // sürüm adımları (Services/SchemaMigrations.cs)
 
         if ((settings.MiniLeft is { } miniLeft && !double.IsFinite(miniLeft)) || (settings.MiniTop is { } miniTop && !double.IsFinite(miniTop)))
         {
@@ -311,7 +303,6 @@ public sealed class StorageService
             settings.MiniTop = null;
         }
 
-        data.SchemaVersion = CyberData.CurrentSchemaVersion;
 
         foreach (var task in data.Tasks)
         {

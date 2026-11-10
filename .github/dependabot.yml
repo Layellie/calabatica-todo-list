@@ -1,0 +1,17 @@
+# Bağımlılık güncellemeleri: haftalık PR açar (Actions SHA'ları ve NuGet paketleri).
+# Actions commit SHA'sına sabitli; Dependabot yeni sürümün SHA'sını ve yorumdaki etiketi birlikte günceller.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

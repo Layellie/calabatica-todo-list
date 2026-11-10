@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows.Threading;
+using CyberTodo;
 using CyberTodo.Models;
 using CyberTodo.Services;
 using CyberTodo.ViewModels;
@@ -9,7 +10,11 @@ void Check(bool ok, string name) { Console.WriteLine($"{(ok ? "PASS" : "FAIL")} 
 
 string dir = Path.Combine(Path.GetTempPath(), "cybertodo-harness-" + Guid.NewGuid().ToString("N"));
 string path = Path.Combine(dir, "cyber_data.json");
-async Task<MainViewModel> Fresh() { var v = new MainViewModel(new StorageService(path)); await v.InitializeAsync(); return v; }
+AppLog.Configure(Path.Combine(dir, "logs")); // testler gerçek log klasörüne yazmasın
+// Paylaşılan sahte saat (öğlen): "bugün 23:59" gibi testler gün içindeki saatten bağımsız.
+var clock = new ManualTime(DateTime.Today.AddHours(12));
+// Rehber ayrı test edilir; buradaki senaryolar "rehberi kapatmış kullanıcı" ile çalışır.
+async Task<MainViewModel> Fresh() { var v = new MainViewModel(new StorageService(path), time: clock); await v.InitializeAsync(); v.CloseOnboardingCommand.Execute(null); return v; }
 
 var thread = new Thread(() =>
 {
@@ -158,16 +163,15 @@ var thread = new Thread(() =>
 
             // ── Focus (Pomodoro): bitmiş oturumu simüle et ──
             await vm.StartFocusCommand.ExecuteAsync(rapor);
-            Check(vm.IsFocusRunning && rapor.IsFocused && vm.FocusRemainingText == "25:00", "focus started 25:00");
-            var startField = typeof(MainViewModel).GetField("_focusStartedAt", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-            startField.SetValue(vm, DateTime.Now.AddMinutes(-26));
+            Check(vm.Focus.IsRunning && rapor.IsFocused && vm.Focus.RemainingText == "25:00", "focus started 25:00");
             int attention = 0; vm.AttentionRequested += (_, _) => attention++;
-            await Task.Delay(1300);
-            Check(!vm.IsFocusRunning && rapor.TrackedMinutes == 25 && attention >= 1, "focus completes, 25 min credited");
+            clock.Advance(TimeSpan.FromMinutes(25));
+            vm.Tick();
+            Check(!vm.Focus.IsRunning && rapor.TrackedMinutes == 25 && attention >= 1, "focus completes, 25 min credited");
             Check(Math.Abs(vm.SelectedDay!.HoursWorked - 25 / 60.0) < 0.01 && vm.SelectedDay.Entries.Any(e => e.Status == LogStatus.Focus), "focus logged to today");
             await vm.StartFocusCommand.ExecuteAsync(rapor);
             await vm.StopFocusCommand.ExecuteAsync(null);
-            Check(!vm.IsFocusRunning && rapor.TrackedMinutes == 25, "stop <1 min credits nothing");
+            Check(!vm.Focus.IsRunning && rapor.TrackedMinutes == 25, "stop <1 min credits nothing");
             vm.Toasts.Clear();
             attention = 0;
 
@@ -381,7 +385,8 @@ var thread = new Thread(() =>
             Check(File.ReadAllText(coalescePath).Contains("\"progress\": 60"), "FlushNow writes synchronously (session ending)");
 
             // ══════════════ Geri alma (Ctrl+Z / ↶) ══════════════
-            var u = new MainViewModel(new StorageService(Path.Combine(dir, "undo.json")));
+            var uClock = new ManualTime(DateTime.Today.AddHours(12));
+            var u = new MainViewModel(new StorageService(Path.Combine(dir, "undo.json")), time: uClock);
             await u.InitializeAsync();
             Check(!u.CanUndo && !u.UndoCommand.CanExecute(null), "undo: nothing to undo on start");
 
@@ -450,7 +455,9 @@ var thread = new Thread(() =>
             await u.AddTaskCommand.ExecuteAsync(null);
             var uf = u.ActiveTasks.First(t => t.Title == "Focus me");
             await u.StartFocusCommand.ExecuteAsync(uf);
-            Check(u.StopFocusAt(DateTime.Now.AddMinutes(10)), "focus: 10 min session credited");
+            uClock.Advance(TimeSpan.FromMinutes(10));
+            await u.StopFocusCommand.ExecuteAsync(null);
+            Check(uf.TrackedMinutes == 10, "focus: 10 min session credited");
             u.ShowFocusCommand.Execute(null);
             Check(u.IsFocusView && u.FocusByCategory.Count == 1 && u.FocusByCategory[0].Label == "#study"
                 && u.FocusByCategory[0].ValueText == Localizer.Instance.Format("Fmt_Minutes", 10) && u.FocusByTask[0].Label == uf.Code + " Focus me",
@@ -662,68 +669,88 @@ var thread = new Thread(() =>
             await notInstalled.CheckUpdatesCommand.ExecuteAsync(null);
             Check(notInstalled.HasUpdate && !notInstalled.CanInstallUpdate, "update: dev build only offers the release page");
 
-            // ══════════════ Hatırlatma erteleme ══════════════
-            var sn = new MainViewModel(new StorageService(Path.Combine(dir, "snooze.json")));
+            // ══════════════ Hatırlatma erteleme (sahte saat) ══════════════
+            var snClock = new ManualTime(DateTime.Today.AddHours(10));
+            var sn = new MainViewModel(new StorageService(Path.Combine(dir, "snooze.json")), time: snClock);
             await sn.InitializeAsync();
             sn.NewTaskTitle = "Call mom";
             await sn.AddTaskCommand.ExecuteAsync(null);
             var st = sn.ActiveTasks.Single();
-            var snDue = DateTime.Now.AddMinutes(30);
-            st.DueAt = snDue;
+            st.DueAt = snClock.LocalNow.AddMinutes(30);
             st.HasDueTime = true;
             st.ReminderMinutesBefore = 0;
-            sn.Tick(snDue.AddSeconds(1));
+            snClock.Advance(TimeSpan.FromMinutes(29));
+            sn.Tick();
+            Check(!sn.Toasts.Any(t => t.Kind == ToastKind.Reminder), "snooze: no reminder before due time");
+            snClock.Advance(TimeSpan.FromMinutes(1));
+            sn.Tick();
             var rt = sn.Toasts.Single(t => t.Kind == ToastKind.Reminder);
             Check(st.ReminderFired && rt.HasAction && rt.HasSecondaryAction, "snooze: reminder toast offers 10 min and 1 h");
             await sn.RunToastSecondaryActionCommand.ExecuteAsync(rt);
-            Check(st.SnoozedUntil is { } snUntil && Math.Abs((snUntil - DateTime.Now.AddMinutes(60)).TotalSeconds) < 5 && !sn.Toasts.Contains(rt),
-                "snooze: 1 h snooze sets time and closes the toast");
-            sn.Tick(DateTime.Now.AddMinutes(30));
+            Check(st.SnoozedUntil == snClock.LocalNow.AddMinutes(60) && !sn.Toasts.Contains(rt), "snooze: 1 h snooze sets exact time and closes the toast");
+            snClock.Advance(TimeSpan.FromMinutes(59));
+            sn.Tick();
             Check(!sn.Toasts.Any(t => t.Kind == ToastKind.Reminder), "snooze: no reminder before snooze time");
-            sn.Tick(DateTime.Now.AddMinutes(61));
+            snClock.Advance(TimeSpan.FromMinutes(1));
+            sn.Tick();
             var rt2 = sn.Toasts.SingleOrDefault(t => t.Kind == ToastKind.Reminder);
-            Check(rt2 is not null && st.SnoozedUntil is null, "snooze: reminder shown again when snooze ends");
+            Check(rt2 is not null && st.SnoozedUntil is null, "snooze: reminder shown again exactly when snooze ends");
             await sn.RunToastActionCommand.ExecuteAsync(rt2);
-            Check(st.SnoozedUntil is { } snUntil2 && Math.Abs((snUntil2 - DateTime.Now.AddMinutes(10)).TotalSeconds) < 5, "snooze: 10 min snooze");
+            Check(st.SnoozedUntil == snClock.LocalNow.AddMinutes(10), "snooze: 10 min snooze");
             await sn.CompleteTaskCommand.ExecuteAsync(st);
-            sn.Tick(DateTime.Now.AddMinutes(11));
+            snClock.Advance(TimeSpan.FromMinutes(11));
+            sn.Tick();
             Check(!sn.Toasts.Any(t => t.Kind == ToastKind.Reminder), "snooze: completed task does not remind again");
             sn.FlushNow();
             Check(File.ReadAllText(Path.Combine(dir, "snooze.json")).Contains("\"snoozedUntil\""), "snooze: snooze time persisted");
 
-            // ══════════════ Mola zamanlayıcısı ══════════════
-            var br = new MainViewModel(new StorageService(Path.Combine(dir, "breaks.json")));
+            // ══════════════ Mola zamanlayıcısı (sahte saat) ══════════════
+            var brClock = new ManualTime(DateTime.Today.AddHours(9));
+            var br = new MainViewModel(new StorageService(Path.Combine(dir, "breaks.json")), time: brClock);
             await br.InitializeAsync();
             br.NewTaskTitle = "Deep work";
             await br.AddTaskCommand.ExecuteAsync(null);
             var bt = br.ActiveTasks.Single();
+            void Run(TimeSpan span) { brClock.Advance(span); br.Tick(); }
             await br.StartFocusCommand.ExecuteAsync(bt);
-            var t1 = DateTime.Now.AddMinutes(25).AddSeconds(5);
-            br.Tick(t1);
-            Check(!br.IsFocusRunning && br.IsOnBreak && !br.IsLongBreak && br.BreakRemainingText == "05:00" && bt.TrackedMinutes == 25,
-                "breaks: 5 min break after focus: " + br.BreakRemainingText);
-            br.Tick(t1.AddMinutes(5).AddSeconds(1));
-            Check(!br.IsOnBreak && !br.IsFocusRunning && br.Toasts.Any(t => t.Message.StartsWith("☕")), "breaks: break ends with notice, no auto-start by default");
+            Run(TimeSpan.FromMinutes(12));
+            Check(br.Focus.IsRunning && br.Focus.RemainingText == "13:00" && Math.Abs(br.Focus.Progress - 12 / 25.0) < 1e-9, "breaks: countdown follows the clock");
+            Run(TimeSpan.FromMinutes(13));
+            Check(!br.Focus.IsRunning && br.Focus.IsOnBreak && !br.Focus.IsLongBreak && br.Focus.BreakRemainingText == "05:00" && bt.TrackedMinutes == 25,
+                "breaks: 5 min break exactly when focus ends: " + br.Focus.BreakRemainingText);
+            Run(TimeSpan.FromMinutes(5));
+            Check(!br.Focus.IsOnBreak && !br.Focus.IsRunning && br.Toasts.Any(t => t.Message.StartsWith("☕")), "breaks: break ends with notice, no auto-start by default");
 
             br.SelectedAutoNextOption = br.SoundOptions.First(o => o.Value);
             await br.StartFocusCommand.ExecuteAsync(bt);
-            var t2 = DateTime.Now.AddMinutes(25).AddSeconds(5);
-            br.Tick(t2);                                     // 2. odak bitti → kısa mola
-            var t3 = t2.AddMinutes(5).AddSeconds(1);
-            br.Tick(t3);                                     // mola bitti → odak otomatik
-            Check(br.IsFocusRunning && br.FocusTask == bt && !br.IsOnBreak, "breaks: auto-start next focus on the same task");
-            var t4 = t3.AddMinutes(25).AddSeconds(5);
-            br.Tick(t4);                                     // 3. odak
-            Check(br.IsOnBreak && !br.IsLongBreak, "breaks: 3rd focus -> short break");
+            Run(TimeSpan.FromMinutes(25));                     // 2. odak → kısa mola
+            Run(TimeSpan.FromMinutes(5));                      // mola bitti → odak otomatik
+            Check(br.Focus.IsRunning && br.Focus.Task == bt && !br.Focus.IsOnBreak, "breaks: auto-start next focus on the same task");
+            Run(TimeSpan.FromMinutes(25));                     // 3. odak
+            Check(br.Focus.IsOnBreak && !br.Focus.IsLongBreak, "breaks: 3rd focus -> short break");
             br.SkipBreakCommand.Execute(null);
-            Check(!br.IsOnBreak && br.IsFocusRunning, "breaks: skip ends break (and auto-starts focus)");
-            br.Tick(DateTime.Now.AddMinutes(25).AddSeconds(5)); // 4. odak
-            Check(br.IsOnBreak && br.IsLongBreak && br.BreakRemainingText == "15:00", "breaks: every 4th focus -> 15 min long break: " + br.BreakRemainingText);
+            Check(!br.Focus.IsOnBreak && br.Focus.IsRunning, "breaks: skip ends break (and auto-starts focus)");
+            Run(TimeSpan.FromMinutes(25));                     // 4. odak
+            Check(br.Focus.IsOnBreak && br.Focus.IsLongBreak && br.Focus.BreakRemainingText == "15:00", "breaks: every 4th focus -> 15 min long break: " + br.Focus.BreakRemainingText);
+            Check(bt.TrackedMinutes == 100, "breaks: four full sessions credited (100 min)");
             await br.StartFocusCommand.ExecuteAsync(bt);
-            Check(!br.IsOnBreak && br.IsFocusRunning, "breaks: starting focus manually cancels the break");
+            Check(!br.Focus.IsOnBreak && br.Focus.IsRunning, "breaks: starting focus manually cancels the break");
             br.SelectedBreaksOption = br.SoundOptions.First(o => !o.Value);
-            br.Tick(DateTime.Now.AddMinutes(25).AddSeconds(5));
-            Check(!br.IsOnBreak && !br.IsFocusRunning, "breaks: disabled -> no break after focus");
+            Run(TimeSpan.FromMinutes(25));
+            Check(!br.Focus.IsOnBreak && !br.Focus.IsRunning, "breaks: disabled -> no break after focus");
+
+            // ── FocusTimer birim testleri (UI'sız) ──
+            var ft = new FocusTimer();
+            var ftTask = new CyberTask { Title = "x" };
+            var ftStart = new DateTime(2026, 1, 1, 9, 0, 0);
+            ft.Start(ftTask, ftStart, TimeSpan.FromMinutes(25));
+            Check(ft.Stop(ftStart.AddSeconds(59))?.Minutes == 0 && !ftTask.IsFocused, "focus timer: <1 min stop credits 0, clears flag");
+            ft.Start(ftTask, ftStart, TimeSpan.FromMinutes(25));
+            Check(ft.Stop(ftStart.AddHours(3))?.Minutes == 25, "focus timer: stop after overrun is capped at session length");
+            Check(ft.Tick(ftStart, breaksEnabled: true) is null && ft.Stop(ftStart) is null, "focus timer: idle tick/stop do nothing");
+            ft.Start(ftTask, ftStart, TimeSpan.FromMinutes(25));
+            var ev = ft.Tick(ftStart.AddMinutes(25), breaksEnabled: false);
+            Check(ev is { Kind: FocusEventKind.FocusCompleted, Minutes: 25 } && !ft.IsOnBreak, "focus timer: completes without break when disabled");
 
             // ══════════════ Alışkanlıklar ══════════════
             var hToday = DateOnly.FromDateTime(DateTime.Today);
@@ -818,9 +845,9 @@ var thread = new Thread(() =>
             Check(kb.Editor?.Target == K("K2"), "keys: Enter opens editor");
             kb.CancelEditCommand.Execute(null);
             await kb.ToggleFocusSelectedAsync();
-            Check(kb.FocusTask == K("K2"), "keys: F starts focus");
+            Check(kb.Focus.Task == K("K2"), "keys: F starts focus");
             await kb.ToggleFocusSelectedAsync();
-            Check(kb.FocusTask is null, "keys: F again stops focus");
+            Check(kb.Focus.Task is null, "keys: F again stops focus");
             var k2 = K("K2");
             kb.EscapeCommand.Execute(null);
             Check(kb.SelectedTask is null && !k2.IsSelected, "keys: Esc clears selection");
@@ -850,7 +877,294 @@ var thread = new Thread(() =>
             var miniSaved = await StorageService.ReadFileAsync(Path.Combine(dir, "mini.json"));
             Check(!mn.IsMiniMode && miniSaved.Settings.MiniLeft == 120 && miniSaved.Settings.MiniTop == 341, "mini: toggles back, position persisted");
 
+            // ══════════════ Artımlı görünüm güncellemesi (tam Refresh olmadan doğru filtre/sıra) ══════════════
+            var iv = new MainViewModel(new StorageService(Path.Combine(dir, "incremental.json")), time: new ManualTime(DateTime.Today.AddHours(8)));
+            await iv.InitializeAsync();
+            foreach (string title in new[] { "Alpha @today @18:00", "Beta @today @09:00", "Gamma report @today @12:00" })
+            {
+                iv.NewTaskTitle = title;
+                await iv.AddTaskCommand.ExecuteAsync(null);
+            }
+
+            iv.SelectedSortOption = iv.SortOptions.First(o => o.Value == SortMode.DueDate);
+            string Visible() => string.Join(",", iv.ActiveView.Cast<CyberTask>().Select(t => t.Title));
+            iv.NewTaskTitle = "Delta @today @10:00";
+            await iv.AddTaskCommand.ExecuteAsync(null);
+            Check(Visible() == "Beta,Delta,Gamma report,Alpha", "incremental: added task lands in due-date order: " + Visible());
+            iv.SearchText = "report";
+            iv.NewTaskTitle = "Epsilon @today @07:00";
+            await iv.AddTaskCommand.ExecuteAsync(null);
+            iv.NewTaskTitle = "Second report @today @06:00";
+            await iv.AddTaskCommand.ExecuteAsync(null);
+            Check(Visible() == "Second report,Gamma report", "incremental: search filter applies to newly added tasks: " + Visible());
+            var gamma = iv.ActiveTasks.Single(t => t.Title == "Gamma report");
+            await iv.CompleteTaskCommand.ExecuteAsync(gamma);
+            Check(Visible() == "Second report" && iv.CompletedView.Cast<CyberTask>().First() == gamma, "incremental: completed task leaves active view, tops completed view");
+            await Task.Delay(400);
+            await iv.RestoreTaskCommand.ExecuteAsync(gamma);
+            Check(Visible() == "Second report,Gamma report", "incremental: restored task returns to sorted position: " + Visible());
+            iv.SearchText = string.Empty;
+            Check(iv.SmartViews.First(s => s.Value == SmartView.Today).Count == 4 && iv.SmartViews.First(s => s.Value == SmartView.Overdue).Count == 2, "incremental: smart-view counts still updated (08:00: 4 today, 2 overdue)");
+
+            // ══════════════ İlk açılış rehberi ══════════════
+            var ob = new MainViewModel(new StorageService(Path.Combine(dir, "onboarding", "cyber_data.json")), time: new ManualTime(DateTime.Today.AddHours(12)));
+            await ob.InitializeAsync();
+            Check(ob.IsOnboardingOpen && ob.OnboardingStepText == "1 / 3" && !ob.PreviousOnboardingStepCommand.CanExecute(null) && ob.OnboardingBody.Length > 50,
+                "onboarding: opens on first run at step 1");
+            ob.NextOnboardingStepCommand.Execute(null);
+            ob.NextOnboardingStepCommand.Execute(null);
+            Check(ob.IsLastOnboardingStep && ob.PreviousOnboardingStepCommand.CanExecute(null) && ob.OnboardingTitle != "!Onb_3_Title!", "onboarding: step 3 is last");
+            ob.NextOnboardingStepCommand.Execute(null);
+            ob.FlushNow();
+            Check(!ob.IsOnboardingOpen && (await StorageService.ReadFileAsync(Path.Combine(dir, "onboarding", "cyber_data.json"))).Settings.OnboardingDone,
+                "onboarding: finishing closes it and remembers");
+            var ob2 = new MainViewModel(new StorageService(Path.Combine(dir, "onboarding", "cyber_data.json")));
+            await ob2.InitializeAsync();
+            Check(!ob2.IsOnboardingOpen, "onboarding: not shown again on next launch");
+            ob2.OpenOnboardingCommand.Execute(null);
+            Check(ob2.IsOnboardingOpen && ob2.OnboardingStep == 0, "onboarding: ? reopens from step 1");
+            ob2.EscapeCommand.Execute(null);
+            Check(!ob2.IsOnboardingOpen, "onboarding: Esc closes");
+
+            // ══════════════ Kayıtlı görünümler ══════════════
+            var sfPath = Path.Combine(dir, "filters", "cyber_data.json");
+            var sf = new MainViewModel(new StorageService(sfPath), time: new ManualTime(DateTime.Today.AddHours(9)));
+            await sf.InitializeAsync();
+            sf.CloseOnboardingCommand.Execute(null);
+            foreach (string title in new[] { "Write report #work @today @17:00", "Read reports #work", "Dishes #home @today @20:00" })
+            {
+                sf.NewTaskTitle = title;
+                await sf.AddTaskCommand.ExecuteAsync(null);
+            }
+
+            Check(!sf.SaveCurrentFilterCommand.CanExecute(null), "filters: default view cannot be saved");
+            sf.SelectedCategoryFilter = sf.CategoryFilters.First(o => o.Value == "work");
+            sf.SelectedSmartView = sf.SmartViews.First(o => o.Value == SmartView.Today);
+            sf.SearchText = "report";
+            await sf.SaveCurrentFilterCommand.ExecuteAsync(null);
+            var saved = sf.SavedFilters.Single();
+            Check(saved.Name.Contains("#work") && saved.Name.Contains("“report”") && saved.IsActive && !sf.SaveCurrentFilterCommand.CanExecute(null),
+                "filters: auto-named, active, duplicate cannot be saved: " + saved.Name);
+            sf.SearchText = string.Empty;
+            sf.SelectedCategoryFilter = sf.CategoryFilters[0];
+            sf.SelectedSmartView = sf.SmartViews[0];
+            Check(!saved.IsActive && sf.ActiveView.Cast<CyberTask>().Count() == 3, "filters: changing filters deactivates the chip");
+            sf.ApplySavedFilterCommand.Execute(saved);
+            Check(saved.IsActive && sf.ActiveView.Cast<CyberTask>().Select(t => t.Title).SequenceEqual(["Write report"]), "filters: applying restores search + category + list");
+            sf.FlushNow();
+            var sfReloaded = new MainViewModel(new StorageService(sfPath));
+            await sfReloaded.InitializeAsync();
+            Check(sfReloaded.SavedFilters.Count == 1 && sfReloaded.SavedFilters[0].Category == "work" && sfReloaded.SavedFilters[0].SmartView == SmartView.Today,
+                "filters: persisted");
+            await sf.DeleteSavedFilterCommand.ExecuteAsync(saved);
+            Check(!sf.HasSavedFilters && sf.SaveCurrentFilterCommand.CanExecute(null), "filters: delete");
+
+            // ══════════════ Yüksek kontrast ══════════════
+            sf.SelectedThemeOption = sf.ThemeOptions.First(o => o.Value == ThemeId.Matrix);
+            sf.SetSystemHighContrast(true);
+            Check(sf.CurrentTheme.IsHighContrast && sf.SelectedThemeOption.Value == ThemeId.Matrix, "contrast: Windows high contrast overrides the palette, choice kept");
+            sf.SelectedThemeOption = sf.ThemeOptions.First(o => o.Value == ThemeId.Amber);
+            Check(sf.CurrentTheme.IsHighContrast, "contrast: picking a theme while high contrast is on keeps it readable");
+            sf.SetSystemHighContrast(false);
+            Check(sf.CurrentTheme.Id == ThemeId.Amber, "contrast: turning it off restores the chosen theme");
+            Check(sf.ThemeOptions.Any(o => o.Value == ThemeId.HighContrast), "contrast: also selectable manually");
+
+            // ══════════════ Şema geçişleri (örnek eski dosyalar) ══════════════
+            Check(SchemaMigrations.LatestVersion == CyberData.CurrentSchemaVersion, "migrations: last step matches CurrentSchemaVersion");
+            string v2Json = """
+                {"schemaVersion":2,"nextTaskNumber":3,"tasks":[
+                  {"id":"6f1f8e8e-0000-4000-8000-000000000001","number":1,"title":"Old done","estimatedHours":2.5,"isCompleted":true,"completedAt":"2025-01-02T10:00:00"},
+                  {"id":"6f1f8e8e-0000-4000-8000-000000000002","number":2,"title":"Daily","recurrence":"Daily","createdAt":"2025-01-01T09:00:00"}]}
+                """;
+            string v2Path = Path.Combine(dir, "v2.json");
+            File.WriteAllText(v2Path, v2Json);
+            var v2 = await StorageService.ReadFileAsync(v2Path);
+            Check(v2.SchemaVersion == CyberData.CurrentSchemaVersion && v2.Tasks[0].CompletionCreditHours == 2.5
+                && v2.Tasks[1].SeriesId == v2.Tasks[1].Id && v2.FocusSessions.Count == 0 && v2.Archive.TaskCount == 0,
+                "migrations: v2 file -> v3 credit, v5 series, new lists initialized");
+            var again = await StorageService.ReadFileAsync(v2Path);
+            SchemaMigrations.Apply(again);
+            Check(again.Tasks[0].CompletionCreditHours == 2.5, "migrations: re-applying on current data is a no-op");
+
+            string newerPath = Path.Combine(dir, "newer", "cyber_data.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(newerPath)!);
+            string newerJson = """{"schemaVersion":99,"nextTaskNumber":2,"futureField":{"x":1},"tasks":[{"number":1,"title":"From the future"}]}""";
+            File.WriteAllText(newerPath, newerJson);
+            var nv = new MainViewModel(new StorageService(newerPath));
+            await nv.InitializeAsync();
+            nv.NewTaskTitle = "change";
+            await nv.AddTaskCommand.ExecuteAsync(null);
+            nv.FlushNow();
+            Check(nv.ErrorMessage is not null && File.ReadAllText(newerPath) == newerJson && nv.ActiveTasks.Any(t => t.Title == "From the future"),
+                "migrations: file from a newer version opens read-only (unknown fields never overwritten)");
+            bool importRejected = false;
+            try { await StorageService.ReadFileAsync(newerPath); } catch (InvalidDataException) { importRejected = true; }
+            Check(importRejected, "migrations: importing/restoring a newer-version file is refused");
+
+            // ══════════════ Arşiv (400 günden eski tamamlananlar) ══════════════
+            string arcPath = Path.Combine(dir, "arc", "cyber_data.json");
+            var arcNow = new DateTime(2026, 11, 10, 12, 0, 0);
+            var arcData = new CyberData();
+            arcData.Tasks.Add(new CyberTask { Number = 1, Title = "Ancient", IsCompleted = true, CompletedAt = arcNow.AddDays(-700), TrackedMinutes = 30 });
+            arcData.Tasks.Add(new CyberTask { Number = 2, Title = "Old", IsCompleted = true, CompletedAt = arcNow.AddDays(-401), TrackedMinutes = 15 });
+            arcData.Tasks.Add(new CyberTask { Number = 3, Title = "Recent", IsCompleted = true, CompletedAt = arcNow.AddDays(-399) });
+            arcData.Tasks.Add(new CyberTask { Number = 4, Title = "Active" });
+            arcData.NextTaskNumber = 5;
+            await StorageService.WriteAtomicAsync(arcPath, StorageService.Serialize(arcData));
+            var av = new MainViewModel(new StorageService(arcPath), time: new ManualTime(arcNow));
+            await av.InitializeAsync();
+            for (int i = 0; i < 50 && av.CompletedTasks.Count != 1; i++) { await Task.Delay(20); } // arşiv açılışta arka planda
+            var arcFiles = new ArchiveService(arcPath).List();
+            Check(av.CompletedTasks.Select(t => t.Title).SequenceEqual(["Recent"]) && av.ActiveTasks.Single().Title == "Active",
+                "archive: tasks completed > 400 days ago leave the main data");
+            Check(arcFiles.Count == 2 && arcFiles.All(f => Path.GetFileName(f).StartsWith("completed-20")), "archive: one file per completion year: " + string.Join(",", arcFiles.Select(Path.GetFileName)));
+            var archivedTitles = new List<string>();
+            foreach (var f in arcFiles) { archivedTitles.AddRange((await StorageService.ReadFileAsync(f)).Tasks.Select(t => t.Title)); }
+            Check(archivedTitles.Order().SequenceEqual(["Ancient", "Old"]), "archive: archived tasks readable with the normal reader");
+            av.FlushNow();
+            var arcSaved = await StorageService.ReadFileAsync(arcPath);
+            Check(arcSaved.Archive.TaskCount == 2 && arcSaved.Archive.TrackedMinutes == 45 && arcSaved.Tasks.Count == 2 && av.ArchiveText.Contains('2'),
+                "archive: summary keeps totals (2 tasks, 45 focus min)");
+            av.ShowStatsCommand.Execute(null);
+            Check(av.StatTiles.Any(t => t.Value.Contains("45")), "archive: focus total in stats includes archived minutes");
+
+            // Çökme benzetimi: görev hem arşivde hem ana veride → tekrar arşivlenince kopya olmaz, sayaç şişmez.
+            var dupData = await StorageService.ReadFileAsync(arcPath);
+            dupData.Tasks.Add(new CyberTask { Id = (await StorageService.ReadFileAsync(arcFiles[^1])).Tasks[0].Id, Title = "Ancient", IsCompleted = true, CompletedAt = arcNow.AddDays(-700) });
+            await StorageService.WriteAtomicAsync(arcPath, StorageService.Serialize(dupData));
+            var av2 = new MainViewModel(new StorageService(arcPath), time: new ManualTime(arcNow));
+            await av2.InitializeAsync();
+            for (int i = 0; i < 50 && av2.CompletedTasks.Count != 1; i++) { await Task.Delay(20); }
+            av2.FlushNow();
+            int ancientCopies = 0;
+            foreach (var f in new ArchiveService(arcPath).List()) { ancientCopies += (await StorageService.ReadFileAsync(f)).Tasks.Count(t => t.Title == "Ancient"); }
+            Check(ancientCopies == 1 && (await StorageService.ReadFileAsync(arcPath)).Archive.TaskCount == 2, "archive: re-archiving after a crash creates no duplicates");
+
+            // Arşiv yazılamazsa hiçbir şey silinmez.
+            string blockedPath = Path.Combine(dir, "arc-blocked", "cyber_data.json");
+            await StorageService.WriteAtomicAsync(blockedPath, StorageService.Serialize(arcData));
+            File.WriteAllText(Path.Combine(dir, "arc-blocked", "archive"), "not a folder");
+            var bv = new MainViewModel(new StorageService(blockedPath), time: new ManualTime(arcNow));
+            await bv.InitializeAsync();
+            int archivedNow = await bv.ArchiveExpiredTasksAsync(arcNow);
+            Check(archivedNow == 0 && bv.CompletedTasks.Count == 3 && bv.ErrorMessage is not null, "archive: write failure keeps every task in place");
+
+            // ══════════════ Log ══════════════
+            Check(File.Exists(Path.Combine(dir, "logs", "app.log")) && File.ReadAllText(Path.Combine(dir, "logs", "app.log")).Contains("ERROR [MainViewModel]"),
+                "log: caught errors (e.g. invalid import) are written to app.log");
+            string? crash1 = null;
+            for (int i = 0; i < AppLog.MaxCrashFiles + 3; i++)
+            {
+                crash1 ??= AppLog.WriteCrash(new InvalidOperationException("boom " + i), "Test");
+                Thread.Sleep(2); // dosya adı milisaniyeli
+                AppLog.WriteCrash(new InvalidOperationException("boom " + i), "Test");
+            }
+
+            var crashFiles = Directory.GetFiles(Path.Combine(dir, "logs"), "crash-*.log");
+            Check(crashFiles.Length == AppLog.MaxCrashFiles && File.ReadAllText(crashFiles.Max()!).Contains("boom")
+                && File.ReadAllText(crashFiles.Max()!).Contains("Version"), "log: crash report written, newest 10 kept");
+            string bigLog = Path.Combine(dir, "logs", "app.log");
+            File.WriteAllText(bigLog, new string('x', (int)AppLog.MaxAppLogBytes + 10));
+            AppLog.Warn("Test", "after rotate");
+            Check(File.Exists(Path.Combine(dir, "logs", "app.1.log")) && new FileInfo(bigLog).Length < 1000, "log: app.log rotates at 1 MB");
+
             Check(Localizer.MissingKeys().Count == 0, "TR/EN key sets identical after new features: " + string.Join(",", Localizer.MissingKeys()));
+
+            // ══════════════ UI duman testi: gerçek pencere, ekran dışında, odak çalmadan ══════════════
+            // Tüm sekmeler/paneller açılır; WPF binding hataları toplanır (XAML değişikliklerinin güvenlik ağı).
+            // CALA_UI_SHOTS ortam değişkeni bir klasörse her ekranın PNG'si oraya yazılır (pencere göstermeden görsel kontrol).
+            var uiApp = System.Windows.Application.Current ?? new System.Windows.Application { ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown };
+            CyberTodo.Themes.ThemeResources.EnsureLoaded(uiApp);
+            var bindingErrors = new List<string>();
+            var bindingListener = new CollectingTraceListener(bindingErrors);
+            System.Diagnostics.PresentationTraceSources.Refresh();
+            System.Diagnostics.PresentationTraceSources.DataBindingSource.Listeners.Add(bindingListener);
+            System.Diagnostics.PresentationTraceSources.DataBindingSource.Switch.Level = System.Diagnostics.SourceLevels.Error;
+            string? shots = Environment.GetEnvironmentVariable("CALA_UI_SHOTS");
+
+            async Task Idle()
+            {
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                await Task.Delay(60);
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            }
+
+            void Shot(System.Windows.FrameworkElement element, string name)
+            {
+                if (string.IsNullOrEmpty(shots) || element.ActualWidth < 1)
+                {
+                    return;
+                }
+
+                var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap((int)element.ActualWidth, (int)element.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                bmp.Render(element);
+                var png = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
+                Directory.CreateDirectory(shots);
+                using var stream = File.Create(Path.Combine(shots, name + ".png"));
+                png.Save(stream);
+            }
+
+            var uiClock = new ManualTime(DateTime.Today.AddHours(11));
+            var uiVm = new MainViewModel(new StorageService(Path.Combine(dir, "ui", "cyber_data.json")), time: uiClock);
+            MainWindow? win = null;
+            System.Windows.FrameworkElement winRoot0() => (System.Windows.FrameworkElement)win!.Content;
+            win = new MainWindow(uiVm, tray: null)
+            {
+                ShowActivated = false,
+                ShowInTaskbar = false,
+                WindowStartupLocation = System.Windows.WindowStartupLocation.Manual,
+                Left = -32000,
+                Top = -32000,
+            };
+            win.Show();
+            await Idle();
+            Check(uiVm.IsOnboardingOpen, "ui: first run shows the onboarding guide");
+            Shot(winRoot0(), "onboarding");
+            uiVm.CloseOnboardingCommand.Execute(null);
+            foreach (string title in new[] { "Write report #work @today @17:00 !", "Gym *mon,wed,fri @today", "Read book #study ~2" })
+            {
+                uiVm.NewTaskTitle = title;
+                await uiVm.AddTaskCommand.ExecuteAsync(null);
+            }
+
+            await uiVm.StartFocusCommand.ExecuteAsync(uiVm.ActiveTasks[0]);
+            uiVm.MoveSelection(1);
+            await Idle();
+            var winRoot = winRoot0();
+            Shot(winRoot, "main");
+            foreach (var mode in Enum.GetValues<ChartMode>())
+            {
+                uiVm.ChartMode = mode;
+                await Idle();
+                Shot(winRoot, "tab-" + mode);
+            }
+
+            uiVm.OpenSettingsCommand.Execute(null); await Idle(); Shot(winRoot, "settings");
+            uiVm.OpenDataCommand.Execute(null); await Idle(); Shot(winRoot, "data");
+            uiVm.OpenTemplatesCommand.Execute(null); await Idle(); Shot(winRoot, "templates");
+            uiVm.CloseTemplatesCommand.Execute(null);
+            uiVm.EditTaskCommand.Execute(uiVm.ActiveTasks[1]); await Idle(); Shot(winRoot, "editor");
+            uiVm.CancelEditCommand.Execute(null);
+            uiClock.Advance(TimeSpan.FromMinutes(25)); uiVm.Tick(); await Idle(); Shot(winRoot, "break");
+            uiVm.SelectedCategoryFilter = uiVm.CategoryFilters.Last(); await uiVm.SaveCurrentFilterCommand.ExecuteAsync(null);
+            uiVm.SetSystemHighContrast(true); await Idle(); Shot(winRoot, "highcontrast");
+            uiVm.SetSystemHighContrast(false);
+
+            // Mini pencere doğrudan (MainWindow'un ShowMini'si ekrana yerleştirip etkinleştirirdi)
+            // (IsMiniMode'u değiştirmek MainWindow'un gerçek mini penceresini ekrana çıkarıp etkinleştirirdi; burada yapılmaz.)
+            var mini = new MiniWindow(uiVm) { ShowActivated = false, Left = -32000, Top = -32000 };
+            uiVm.MiniTasks.Refresh();
+            mini.Show();
+            await Idle();
+            Shot((System.Windows.FrameworkElement)mini.Content, "mini");
+
+            Check(bindingErrors.Count == 0, $"ui: no binding errors across all tabs/panels ({bindingErrors.Count})" +
+                (bindingErrors.Count > 0 ? "\n      " + string.Join("\n      ", bindingErrors.Distinct().Take(8)) : string.Empty));
+            Check(winRoot.ActualWidth > 0 && win.IsLoaded, "ui: main window loaded and laid out off-screen");
+            System.Diagnostics.PresentationTraceSources.DataBindingSource.Listeners.Remove(bindingListener);
+            mini.CloseForShutdown();
+            win.Hide();
 
             // ── Bilgi (test değil): 2500 görevlik veride bir kaydın maliyeti ──
             var big = new CyberData();
@@ -924,4 +1238,37 @@ sealed class FakeHttp : System.Net.Http.HttpMessageHandler
         response.RequestMessage = RedirectTo is null ? request : new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, RedirectTo);
         return Task.FromResult(response);
     }
+}
+
+/// <summary>WPF binding hata izlerini toplar.</summary>
+sealed class CollectingTraceListener(List<string> sink) : System.Diagnostics.TraceListener
+{
+    private readonly System.Text.StringBuilder _line = new();
+
+    public override void Write(string? message) => _line.Append(message);
+
+    public override void WriteLine(string? message)
+    {
+        _line.Append(message);
+        lock (sink)
+        {
+            sink.Add(_line.ToString());
+        }
+
+        _line.Clear();
+    }
+}
+
+/// <summary>Elle ilerletilen saat (Microsoft.Extensions.TimeProvider.Testing paketi yerine; bağımlılıksız).</summary>
+sealed class ManualTime(DateTime localStart) : TimeProvider
+{
+    private DateTimeOffset _utc = new DateTimeOffset(localStart, TimeZoneInfo.Local.GetUtcOffset(localStart)).ToUniversalTime();
+
+    public DateTime LocalNow => GetLocalNow().DateTime;
+
+    public override DateTimeOffset GetUtcNow() => _utc;
+
+    public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Local;
+
+    public void Advance(TimeSpan span) => _utc += span;
 }

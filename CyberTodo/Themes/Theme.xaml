@@ -1,0 +1,780 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:po="http://schemas.microsoft.com/winfx/2006/xaml/presentation/options"
+    xmlns:local="clr-namespace:CyberTodo"
+    xmlns:models="clr-namespace:CyberTodo.Models"
+    xmlns:loc="clr-namespace:CyberTodo.Services"
+    mc:Ignorable="po">
+    <!--
+        CALABATICA ortak tema: palet, düğme/metin kutusu/çip stilleri ve olay işleyicisi kullanmayan veri şablonları.
+        Uygulama düzeyinde yüklenir (ThemeResources.Load); ana ve mini pencere aynı stilleri kullanır.
+        Tema renkleri pencere düzeyinde ApplyTheme ile ezilir (DynamicResource).
+    -->
+    <!-- ═════════════ Palet (dondurulmuş fırçalar) ═════════════ -->
+    <!-- Tema renkleri: çalışma anında MainWindow.ApplyTheme ile değiştirilir (DynamicResource) -->
+    <Color x:Key="PrimaryColor">#FCEE0A</Color>
+    <Color x:Key="SecondaryColor">#00F0FF</Color>
+    <SolidColorBrush x:Key="PrimaryDeepBrush" Color="#1A1800" po:Freeze="True" />
+    <SolidColorBrush x:Key="YellowBrush" Color="#FCEE0A" po:Freeze="True" />
+    <SolidColorBrush x:Key="CyanBrush" Color="#00F0FF" po:Freeze="True" />
+    <SolidColorBrush x:Key="RedBrush" Color="#FF003C" po:Freeze="True" />
+    <SolidColorBrush x:Key="RedDimBrush" Color="#5C0016" po:Freeze="True" />
+    <SolidColorBrush x:Key="GreenBrush" Color="#00FF66" po:Freeze="True" />
+    <SolidColorBrush x:Key="GreyBrush" Color="#4A5568" po:Freeze="True" />
+    <SolidColorBrush x:Key="WhiteBrush" Color="#FFFFFF" po:Freeze="True" />
+    <SolidColorBrush x:Key="BlackBrush" Color="#000000" po:Freeze="True" />
+    <SolidColorBrush x:Key="PanelBrush" Color="#050A0E" po:Freeze="True" />
+    <SolidColorBrush x:Key="PanelAltBrush" Color="#070D12" po:Freeze="True" />
+    <SolidColorBrush x:Key="CyanDimBrush" Color="#6600F0FF" po:Freeze="True" />
+    <SolidColorBrush x:Key="CyanFaintBrush" Color="#1F00F0FF" po:Freeze="True" />
+    <SolidColorBrush x:Key="YellowDimBrush" Color="#55FCEE0A" po:Freeze="True" />
+    <SolidColorBrush x:Key="SubtleTextBrush" Color="#8A94A6" po:Freeze="True" />
+    <SolidColorBrush x:Key="AxisTextBrush" Color="#5CA9B3" po:Freeze="True" />
+    <SolidColorBrush x:Key="DividerBrush" Color="#1E2630" po:Freeze="True" />
+    <SolidColorBrush x:Key="BackdropBrush" Color="#C8000000" po:Freeze="True" />
+    <!-- Neredeyse görünmez ama tıklanabilir (şeffaf pencerede alfa=0 piksel tıklamayı geçirir) -->
+    <SolidColorBrush x:Key="HitTestBrush" Color="#01000000" po:Freeze="True" />
+
+    <!--
+        Yeniden boyutlandırma tutamacı: köşe kesik olduğu için varsayılan noktalı kare boşlukta kalıyordu.
+        Yerine kesik köşeye paralel üç sarı çentik (çerçevenin içinde) — HUD aksanı gibi görünür.
+        34x34 alan: kesik çizgi bu alanda x+y=38 doğrusunda; çentikler x+y=31/26/21 üzerinde.
+    -->
+    <Style TargetType="ResizeGrip">
+        <Setter Property="Width" Value="34" />
+        <Setter Property="Height" Value="34" />
+        <Setter Property="Cursor" Value="SizeNWSE" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ResizeGrip">
+                    <Grid Background="{StaticResource HitTestBrush}">
+                        <Path Stroke="{DynamicResource YellowBrush}" StrokeThickness="1.5"
+                              Data="M13,18 L18,13 M10,16 L16,10 M8,13 L13,8" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ═════════════ Butonlar ═════════════ -->
+    <Style x:Key="ChamferButton" TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource PanelAltBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CyanBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource CyanBrush}" />
+        <Setter Property="Padding" Value="16,6" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid Background="Transparent">
+                        <local:ChamferFrame x:Name="Frame"
+                                            Fill="{TemplateBinding Background}"
+                                            Stroke="{TemplateBinding BorderBrush}"
+                                            StrokeThickness="1.5"
+                                            Chamfer="10"
+                                            Corners="TopLeft, BottomRight" />
+                        <ContentPresenter Margin="{TemplateBinding Padding}"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          RecognizesAccessKey="False" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Frame" Property="StrokeThickness" Value="2.5" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Frame" Property="StrokeThickness" Value="1" />
+                        </Trigger>
+                        <!-- Devre dışı: saydamlık yerine gri renk (Opacity ara katmanı kesirli ölçekte iz bırakıyordu) -->
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="{DynamicResource GreyBrush}" />
+                            <Setter Property="BorderBrush" Value="{DynamicResource GreyBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="AddButton" TargetType="Button" BasedOn="{StaticResource ChamferButton}">
+        <Setter Property="Foreground" Value="{DynamicResource YellowBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource YellowBrush}" />
+        <Setter Property="Padding" Value="18,6" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{DynamicResource YellowBrush}" />
+                <Setter Property="Foreground" Value="{StaticResource BlackBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="SmallButton" TargetType="Button" BasedOn="{StaticResource ChamferButton}">
+        <Setter Property="Padding" Value="10,4" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Margin" Value="0,0,8,0" />
+    </Style>
+
+    <!-- Gün çipi (DataContext = DayToggle): seçiliyse cyan dolgu + siyah metin -->
+    <Style x:Key="DayChipButton" TargetType="Button" BasedOn="{StaticResource SmallButton}">
+        <Setter Property="MinWidth" Value="52" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                <Setter Property="Background" Value="{DynamicResource CyanBrush}" />
+                <Setter Property="Foreground" Value="{StaticResource BlackBrush}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="TabButton" TargetType="Button" BasedOn="{StaticResource ChamferButton}">
+        <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="Padding" Value="13,8" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="Margin" Value="0,0,6,0" />
+    </Style>
+
+    <!-- Pencere butonları (ayarlar / küçült / kapat) -->
+    <Style x:Key="CaptionButton" TargetType="Button">
+        <Setter Property="Width" Value="38" />
+        <Setter Property="Height" Value="30" />
+        <Setter Property="Margin" Value="8,0,0,0" />
+        <Setter Property="Background" Value="{StaticResource PanelAltBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource YellowDimBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource YellowBrush}" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid Background="Transparent">
+                        <local:ChamferFrame Fill="{TemplateBinding Background}"
+                                            Stroke="{TemplateBinding BorderBrush}"
+                                            StrokeThickness="1.5"
+                                            Chamfer="7"
+                                            Corners="TopLeft, BottomRight" />
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="False" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="BorderBrush" Value="{DynamicResource YellowBrush}" />
+                <Setter Property="Background" Value="{DynamicResource PrimaryDeepBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="CaptionCloseButton" TargetType="Button" BasedOn="{StaticResource CaptionButton}">
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="BorderBrush" Value="{StaticResource RedBrush}" />
+                <Setter Property="Background" Value="{StaticResource RedBrush}" />
+                <Setter Property="Foreground" Value="{StaticResource BlackBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Satır içi ikon butonu (✎ / ✕) -->
+    <Style x:Key="IconButton" TargetType="Button">
+        <Setter Property="Width" Value="28" />
+        <Setter Property="Height" Value="26" />
+        <Setter Property="Margin" Value="4,0,0,0" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="Foreground" Value="{DynamicResource SubtleTextBrush}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="Transparent" BorderBrush="Transparent" BorderThickness="1">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="False" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{Binding Foreground, RelativeSource={RelativeSource TemplatedParent}}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Foreground" Value="{DynamicResource CyanBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="DeleteIconButton" TargetType="Button" BasedOn="{StaticResource IconButton}">
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Foreground" Value="{StaticResource RedBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!--
+        Satır içi ikonlar: varsayılan soluk gri, satırın üzerine gelince açık gri, ikonun üzerine gelince cyan/kırmızı.
+        (Opacity kullanılmaz: ara katman kesirli ölçekte kutu/kırpma izi bırakıyordu.)
+        Tetikleyici sırası önemli: en son tanımlanan kazanır → ikon hover'ı satır hover'ını ezer.
+    -->
+    <Style x:Key="RowIconButton" TargetType="Button" BasedOn="{StaticResource IconButton}">
+        <Setter Property="Foreground" Value="{DynamicResource GreyBrush}" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Grid}}" Value="True">
+                <Setter Property="Foreground" Value="{DynamicResource SubtleTextBrush}" />
+            </DataTrigger>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Foreground" Value="{DynamicResource CyanBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="RowDeleteButton" TargetType="Button" BasedOn="{StaticResource RowIconButton}">
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Foreground" Value="{StaticResource RedBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Aktif görev kutusu: boş kare, üzerine gelince tik önizlemesi -->
+    <Style x:Key="TaskCheckButton" TargetType="Button">
+        <Setter Property="Width" Value="28" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CyanBrush}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid Background="{StaticResource PanelAltBrush}">
+                        <Border BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="2" />
+                        <Path x:Name="Check" Data="M6,14 L11,19 L22,8" Stroke="{TemplateBinding BorderBrush}" StrokeThickness="2" Visibility="Hidden" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Check" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Tamamlanan görev kutusu: gri tik, üzerine gelince cyan (geri al) -->
+    <Style x:Key="DoneCheckButton" TargetType="Button">
+        <Setter Property="Width" Value="28" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="BorderBrush" Value="{DynamicResource GreyBrush}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid Background="Transparent">
+                        <Border BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="2" />
+                        <Path Data="M6,14 L11,19 L22,8" Stroke="{TemplateBinding BorderBrush}" StrokeThickness="3" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="BorderBrush" Value="{DynamicResource CyanBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Küçük kutu (alt görevler): içerik (tik) DataTemplate'ten verilir ki tetikleyici erişebilsin -->
+    <Style x:Key="MiniCheckButton" TargetType="Button">
+        <Setter Property="Width" Value="18" />
+        <Setter Property="Height" Value="18" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CyanDimBrush}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid Background="{StaticResource PanelAltBrush}">
+                        <Border BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1.5" />
+                        <ContentPresenter />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="BorderBrush" Value="{DynamicResource CyanBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Neon ProgressBar: animasyonsuz, efektsiz (liste içinde güvenli) -->
+    <Style x:Key="NeonProgress" TargetType="ProgressBar">
+        <Setter Property="Minimum" Value="0" />
+        <Setter Property="Maximum" Value="100" />
+        <Setter Property="Height" Value="14" />
+        <Setter Property="Foreground" Value="{DynamicResource CyanBrush}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ProgressBar">
+                    <!--
+                        Soluk kenar Opacity ile DEĞİL, üstüne yarı saydam koyu katmanla:
+                        Opacity ara katman açar; kesirli ölçekte (%85) katman sınırı yuvarlanıp alt kenarı kırpıyordu.
+                    -->
+                    <Grid Background="Transparent">
+                        <Border Background="#0A1016" BorderBrush="{TemplateBinding Foreground}" BorderThickness="1" />
+                        <Rectangle Fill="#66070D12" IsHitTestVisible="False" />
+                        <Grid x:Name="PART_Track" Margin="3">
+                            <Rectangle x:Name="PART_Indicator" Fill="{TemplateBinding Foreground}" HorizontalAlignment="Left" />
+                        </Grid>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- TextBox: Tag = boşken görünen ipucu metni -->
+    <Style x:Key="NeonTextBox" TargetType="TextBox">
+        <Setter Property="Background" Value="{StaticResource PanelAltBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource CyanBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CyanDimBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CaretBrush" Value="{DynamicResource YellowBrush}" />
+        <Setter Property="SelectionBrush" Value="{DynamicResource CyanBrush}" />
+        <Setter Property="Padding" Value="8,6" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <!--
+            GPU render'ında kırpılan (clip) alanların üst/alt kenarında ince açık renkli çizgi kalıyor
+            (yazılım render'ında yok). Kırpma katmanında kenar yumuşatmayı kapatmak çizgiyi kaldırıyor;
+            TextBox içinde sadece metin olduğu için görsel kayıp yok.
+        -->
+        <Setter Property="RenderOptions.EdgeMode" Value="Aliased" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Border x:Name="Bd"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}">
+                        <Grid Margin="{TemplateBinding Padding}">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Focusable="False"
+                                          HorizontalScrollBarVisibility="Hidden"
+                                          VerticalScrollBarVisibility="Hidden" />
+                            <TextBlock x:Name="Hint"
+                                       Margin="2,0,0,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource GreyBrush}"
+                                       FontStyle="Italic"
+                                       IsHitTestVisible="False"
+                                       TextTrimming="CharacterEllipsis"
+                                       Text="{TemplateBinding Tag}"
+                                       Visibility="Collapsed" />
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="Text" Value="">
+                            <Setter TargetName="Hint" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource CyanBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource YellowBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsReadOnly" Value="True">
+                            <Setter Property="Foreground" Value="{DynamicResource SubtleTextBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- İnce neon ScrollBar (dikey + yatay şablon) -->
+    <ControlTemplate x:Key="VerticalScrollBarTemplate" TargetType="ScrollBar">
+        <Grid Background="{StaticResource PanelBrush}">
+            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                <Track.Thumb>
+                    <Thumb>
+                        <Thumb.Template>
+                            <ControlTemplate TargetType="Thumb">
+                                <Rectangle Fill="{DynamicResource CyanDimBrush}" />
+                            </ControlTemplate>
+                        </Thumb.Template>
+                    </Thumb>
+                </Track.Thumb>
+            </Track>
+        </Grid>
+    </ControlTemplate>
+    <ControlTemplate x:Key="HorizontalScrollBarTemplate" TargetType="ScrollBar">
+        <Grid Background="{StaticResource PanelBrush}">
+            <Track x:Name="PART_Track">
+                <Track.Thumb>
+                    <Thumb>
+                        <Thumb.Template>
+                            <ControlTemplate TargetType="Thumb">
+                                <Rectangle Fill="{DynamicResource CyanDimBrush}" />
+                            </ControlTemplate>
+                        </Thumb.Template>
+                    </Thumb>
+                </Track.Thumb>
+            </Track>
+        </Grid>
+    </ControlTemplate>
+    <Style TargetType="ScrollBar">
+        <Setter Property="Width" Value="6" />
+        <Setter Property="MinWidth" Value="6" />
+        <Setter Property="Template" Value="{StaticResource VerticalScrollBarTemplate}" />
+        <Style.Triggers>
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Width" Value="Auto" />
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="Height" Value="6" />
+                <Setter Property="MinHeight" Value="6" />
+                <Setter Property="Template" Value="{StaticResource HorizontalScrollBarTemplate}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- ═════════════ Seçim çipleri (LocalizedOption listeleri) ═════════════ -->
+    <!-- İstatistik / odak kutucuğu -->
+    <DataTemplate x:Key="StatTileTemplate" DataType="{x:Type models:StatTile}">
+        <Grid Margin="0,0,10,10">
+            <local:ChamferFrame x:Name="TileFrame" Fill="{StaticResource PanelAltBrush}" Stroke="{DynamicResource CyanDimBrush}"
+                                StrokeThickness="1" Chamfer="8" Corners="TopLeft, BottomRight" />
+            <StackPanel Margin="12,8,10,10">
+                <TextBlock FontSize="11" Foreground="{DynamicResource SubtleTextBrush}" TextTrimming="CharacterEllipsis" Text="{Binding Label}" />
+                <TextBlock x:Name="TileValue" Margin="0,4,0,2" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource CyanBrush}"
+                           TextTrimming="CharacterEllipsis" Text="{Binding Value}" />
+                <TextBlock FontSize="11" Foreground="{DynamicResource GreyBrush}" TextTrimming="CharacterEllipsis" Text="{Binding Sub}" />
+            </StackPanel>
+        </Grid>
+        <DataTemplate.Triggers>
+            <DataTrigger Binding="{Binding Highlight}" Value="True">
+                <Setter TargetName="TileValue" Property="Foreground" Value="{DynamicResource YellowBrush}" />
+                <Setter TargetName="TileFrame" Property="Stroke" Value="{DynamicResource YellowBrush}" />
+            </DataTrigger>
+        </DataTemplate.Triggers>
+    </DataTemplate>
+
+    <!-- Odak: yatay çubuklu satır (kategori / görev). Oran yıldız sütunlarla verilir; efekt yok. -->
+    <DataTemplate x:Key="FocusSliceTemplate" DataType="{x:Type models:FocusSlice}">
+        <Grid Margin="0,0,0,9">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBlock FontSize="12" Foreground="{DynamicResource AxisTextBrush}" TextTrimming="CharacterEllipsis" Text="{Binding Label}" />
+            <TextBlock x:Name="SliceValue" Grid.Column="1" Margin="10,0,0,0" FontSize="12" FontWeight="SemiBold"
+                       Foreground="{DynamicResource CyanBrush}" Text="{Binding ValueText}" />
+            <Grid Grid.Row="1" Grid.ColumnSpan="2" Height="4" Margin="0,4,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="{Binding FillWidth}" />
+                    <ColumnDefinition Width="{Binding EmptyWidth}" />
+                </Grid.ColumnDefinitions>
+                <Border Grid.ColumnSpan="2" Background="{DynamicResource CyanFaintBrush}" />
+                <Border x:Name="SliceBar" Background="{DynamicResource CyanBrush}" />
+            </Grid>
+        </Grid>
+        <DataTemplate.Triggers>
+            <DataTrigger Binding="{Binding IsTop}" Value="True">
+                <Setter TargetName="SliceBar" Property="Background" Value="{DynamicResource YellowBrush}" />
+                <Setter TargetName="SliceValue" Property="Foreground" Value="{DynamicResource YellowBrush}" />
+            </DataTrigger>
+        </DataTemplate.Triggers>
+    </DataTemplate>
+
+    <!--
+        Örtük ListBoxItem stili: konteyner ilk oluşturulurken (ItemContainerStyle uygulanmadan önce) tema stilinin
+        HorizontalContentAlignment = FindAncestor(ItemsControl) bağlaması kurulmasın. Çip listesi yeniden
+        doldurulurken çıkarılan öğeler 'System.Windows.Data Error: 4' basıyordu.
+    -->
+    <Style TargetType="ListBoxItem">
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="ChipItemStyle" TargetType="ListBoxItem">
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CyanBrush}" />
+        <Setter Property="Margin" Value="0,0,8,6" />
+        <Setter Property="Padding" Value="12,5" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Grid Background="Transparent">
+                        <local:ChamferFrame x:Name="Frame"
+                                            Fill="{StaticResource PanelAltBrush}"
+                                            Stroke="{TemplateBinding BorderBrush}"
+                                            StrokeThickness="1.5"
+                                            Chamfer="7"
+                                            Corners="TopLeft, BottomRight" />
+                        <ContentPresenter x:Name="Content"
+                                          Margin="{TemplateBinding Padding}"
+                                          TextElement.Foreground="{TemplateBinding BorderBrush}" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Frame" Property="StrokeThickness" Value="2.5" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Frame" Property="Fill"
+                                    Value="{Binding BorderBrush, RelativeSource={RelativeSource TemplatedParent}}" />
+                            <Setter TargetName="Content" Property="TextElement.Foreground" Value="{StaticResource BlackBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Öncelik çipi: renk Value'ya göre -->
+    <Style x:Key="PriorityChipStyle" TargetType="ListBoxItem" BasedOn="{StaticResource ChipItemStyle}">
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Value}" Value="HighPriority">
+                <Setter Property="BorderBrush" Value="{StaticResource RedBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Value}" Value="Decrypting">
+                <Setter Property="BorderBrush" Value="{DynamicResource YellowBrush}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <DataTemplate x:Key="OptionLabelTemplate">
+        <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding Label}" />
+    </DataTemplate>
+
+    <Style x:Key="ChipList" TargetType="ListBox">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="ItemContainerStyle" Value="{StaticResource ChipItemStyle}" />
+        <Setter Property="ItemTemplate" Value="{StaticResource OptionLabelTemplate}" />
+        <Setter Property="ItemsPanel">
+            <Setter.Value>
+                <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Log satırı durum etiketi (dile göre) -->
+    <Style x:Key="LogTagRun" TargetType="Run">
+        <Setter Property="Foreground" Value="{StaticResource GreenBrush}" />
+        <Setter Property="Text" Value="" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Status}" Value="Done">
+                <Setter Property="Text" Value="{loc:Tr Log_Done}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Status}" Value="Passed">
+                <Setter Property="Text" Value="{loc:Tr Log_Passed}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Status}" Value="Failed">
+                <Setter Property="Text" Value="{loc:Tr Log_Failed}" />
+                <Setter Property="Foreground" Value="{StaticResource RedBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Status}" Value="Focus">
+                <Setter Property="Text" Value="{loc:Tr Log_Focus}" />
+                <Setter Property="Foreground" Value="{DynamicResource YellowBrush}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="FieldLabel" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{DynamicResource SubtleTextBrush}" />
+        <Setter Property="Margin" Value="0,12,0,5" />
+    </Style>
+
+    <!-- Overlay görünürlüğü: bağlı değer null ise gizli -->
+    <Style x:Key="OverlayWhenEditor" TargetType="Grid">
+        <Setter Property="Visibility" Value="Visible" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Editor}" Value="{x:Null}">
+                <Setter Property="Visibility" Value="Collapsed" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- ═════════════ Veri şablonları (EFEKT YOK) ═════════════ -->
+
+    <DataTemplate x:Key="SubtaskRowTemplate" DataType="{x:Type models:SubTask}">
+        <StackPanel Margin="0,4,0,0" Orientation="Horizontal">
+            <Button Style="{StaticResource MiniCheckButton}" AutomationProperties.Name="{Binding Title}"
+                    VerticalAlignment="Center"
+                    Command="{Binding DataContext.ToggleSubtaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                    CommandParameter="{Binding}">
+                <Path x:Name="SubCheck" Data="M3,9 L7,13 L14,4" Stroke="{DynamicResource CyanBrush}" StrokeThickness="2" Visibility="Hidden" />
+            </Button>
+            <TextBlock x:Name="SubTitle" Margin="10,0,0,0" VerticalAlignment="Center" FontSize="14"
+                       Foreground="{DynamicResource CyanBrush}" Text="{Binding Title}" />
+        </StackPanel>
+        <DataTemplate.Triggers>
+            <DataTrigger Binding="{Binding IsDone}" Value="True">
+                <Setter TargetName="SubCheck" Property="Visibility" Value="Visible" />
+                <Setter TargetName="SubTitle" Property="Foreground" Value="{DynamicResource GreyBrush}" />
+                <Setter TargetName="SubTitle" Property="TextDecorations" Value="Strikethrough" />
+            </DataTrigger>
+        </DataTemplate.Triggers>
+    </DataTemplate>
+
+    <DataTemplate x:Key="CompletedTaskTemplate" DataType="{x:Type models:CyberTask}">
+        <Grid x:Name="Row" Margin="0,0,10,12" Background="Transparent">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Button Style="{StaticResource DoneCheckButton}"
+                    Margin="0,0,18,0"
+                    VerticalAlignment="Center"
+                    AutomationProperties.Name="{loc:Tr Tip_Restore}" ToolTip="{loc:Tr Tip_Restore}"
+                    Command="{Binding DataContext.RestoreTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                    CommandParameter="{Binding}" />
+            <TextBlock Grid.Column="1"
+                       VerticalAlignment="Center"
+                       FontSize="18"
+                       Foreground="{DynamicResource GreyBrush}"
+                       TextDecorations="Strikethrough"
+                       TextTrimming="CharacterEllipsis">
+                <Run Text="{Binding Code, Mode=OneWay}" /><Run Text=" " /><Run Text="{Binding Title, Mode=OneWay}" />
+            </TextBlock>
+            <TextBlock Grid.Column="2"
+                       Margin="12,0,0,0"
+                       VerticalAlignment="Center"
+                       FontSize="13"
+                       Foreground="{DynamicResource GreyBrush}"
+                       Text="{Binding CompletedAt, StringFormat='[✓ {0:dd.MM HH:mm}]'}" />
+            <Button x:Name="DeleteBtn" Grid.Column="3" Margin="8,0,0,0"
+                    Style="{StaticResource RowDeleteButton}" Content="✕" AutomationProperties.Name="{loc:Tr Tip_Delete}" ToolTip="{loc:Tr Tip_Delete}"
+                    Command="{Binding DataContext.DeleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                    CommandParameter="{Binding}" />
+        </Grid>
+    </DataTemplate>
+
+    <DataTemplate x:Key="LogEntryTemplate" DataType="{x:Type models:ActivityLogEntry}">
+        <TextBlock Margin="0,3" FontSize="15" Foreground="{DynamicResource CyanBrush}" TextWrapping="Wrap">
+            <Run Text="◷ " /><Run Text="{Binding Time, Mode=OneWay}" /><Run Text=" - " /><Run Text="{Binding Description, Mode=OneWay}" /><Run Style="{StaticResource LogTagRun}" />
+        </TextBlock>
+    </DataTemplate>
+
+    <!-- X ekseni etiketi: negatif margin → dar hücreden taşan metin kırpılmaz -->
+    <DataTemplate x:Key="ChartLabelTemplate" DataType="{x:Type models:ChartBar}">
+        <TextBlock x:Name="Lbl"
+                   Margin="-40,0"
+                   TextAlignment="Center"
+                   FontSize="11"
+                   Foreground="{DynamicResource AxisTextBrush}"
+                   Text="{Binding Label}"
+                   Visibility="Hidden" />
+        <DataTemplate.Triggers>
+            <DataTrigger Binding="{Binding ShowLabel}" Value="True">
+                <Setter TargetName="Lbl" Property="Visibility" Value="Visible" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding IsHovered}" Value="True">
+                <Setter TargetName="Lbl" Property="Visibility" Value="Visible" />
+                <Setter TargetName="Lbl" Property="Foreground" Value="{DynamicResource YellowBrush}" />
+            </DataTrigger>
+        </DataTemplate.Triggers>
+    </DataTemplate>
+
+    <DataTemplate x:Key="ToastTemplate" DataType="{x:Type models:ToastItem}">
+        <Grid Margin="0,10,0,0">
+            <local:ChamferFrame x:Name="ToastFrame" Fill="{StaticResource PanelAltBrush}" Stroke="{DynamicResource CyanBrush}"
+                                StrokeThickness="1.5" Chamfer="10" Corners="TopLeft, BottomRight" />
+            <Grid Margin="16,12,10,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="ToastText" VerticalAlignment="Center" FontSize="14" TextWrapping="Wrap"
+                           Foreground="{DynamicResource CyanBrush}" Text="{Binding Message}" />
+                <Button x:Name="ToastAction" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource SmallButton}"
+                        Content="{Binding ActionLabel}"
+                        Command="{Binding DataContext.RunToastActionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}" />
+                <Button x:Name="ToastSecondary" Grid.Column="2" Style="{StaticResource SmallButton}"
+                        Content="{Binding SecondaryActionLabel}"
+                        Command="{Binding DataContext.RunToastSecondaryActionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}" />
+                <Button Grid.Column="3" Style="{StaticResource IconButton}" Content="✕" AutomationProperties.Name="{loc:Tr Tip_Dismiss}" ToolTip="{loc:Tr Tip_Dismiss}"
+                        Command="{Binding DataContext.DismissToastCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}" />
+            </Grid>
+        </Grid>
+        <DataTemplate.Triggers>
+            <DataTrigger Binding="{Binding HasAction}" Value="False">
+                <Setter TargetName="ToastAction" Property="Visibility" Value="Collapsed" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding HasSecondaryAction}" Value="False">
+                <Setter TargetName="ToastSecondary" Property="Visibility" Value="Collapsed" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Kind}" Value="Reminder">
+                <Setter TargetName="ToastFrame" Property="Stroke" Value="{DynamicResource YellowBrush}" />
+                <Setter TargetName="ToastText" Property="Foreground" Value="{DynamicResource YellowBrush}" />
+            </DataTrigger>
+        </DataTemplate.Triggers>
+    </DataTemplate>
+
+    <!--
+        Sanallaştırılmış görev listesi: yalnızca görünen satırlar oluşturulur, kaydırırken satırlar yeniden kullanılır.
+        (Önceden ScrollViewer içindeki düz ItemsControl 2500 görevde ~18 sn açılış / 570 MB'a çıkıyordu.)
+        ScrollViewer kontrolün KENDİ şablonunda olmalı ki panel kaydırmayı yönetebilsin (CanContentScroll).
+        EdgeMode: kırpma kenarı çizgisi düzeltmesi (bkz. NeonTextBox); içerik yumuşatmalı kalır.
+    -->
+    <ControlTemplate x:Key="VirtualItemsTemplate" TargetType="ItemsControl">
+        <ScrollViewer Focusable="False"
+                      CanContentScroll="True"
+                      HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto"
+                      Background="{TemplateBinding Background}"
+                      RenderOptions.EdgeMode="Aliased">
+            <ItemsPresenter RenderOptions.EdgeMode="Unspecified" />
+        </ScrollViewer>
+    </ControlTemplate>
+
+    <Style x:Key="VirtualList" TargetType="ItemsControl">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Template" Value="{StaticResource VirtualItemsTemplate}" />
+        <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
+        <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+        <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel" />
+        <Setter Property="ItemsPanel">
+            <Setter.Value>
+                <ItemsPanelTemplate>
+                    <VirtualizingStackPanel />
+                </ItemsPanelTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <ItemsPanelTemplate x:Key="SingleRowPanel">
+        <UniformGrid Rows="1" />
+    </ItemsPanelTemplate>
+</ResourceDictionary>

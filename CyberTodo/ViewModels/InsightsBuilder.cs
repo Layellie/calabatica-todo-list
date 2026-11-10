@@ -46,7 +46,8 @@ public static class InsightsBuilder
         IEnumerable<CyberTask> allTasks,
         DateOnly today,
         Localizer loc,
-        Func<int, string> formatMinutes)
+        Func<int, string> formatMinutes,
+        int archivedFocusMinutes = 0)
     {
         var culture = loc.Culture;
         string Hours(double h) => h.ToString("0.#", culture);
@@ -79,7 +80,7 @@ public static class InsightsBuilder
         int totalCompleted = days.Values.Sum(static d => d.CompletedCount);
         double totalHours = days.Values.Sum(static d => d.HoursWorked);
 
-        int focusMinutes = allTasks.Sum(static t => t.TrackedMinutes);
+        int focusMinutes = allTasks.Sum(static t => t.TrackedMinutes) + archivedFocusMinutes; // arşive taşınanlar da sayılır
         int focusSessions = days.Values.Sum(static d => d.Entries.Count(static e => e.Status == LogStatus.Focus));
 
         // En verimli saat: tamamlanma + odak kayıtlarının saat dağılımı.

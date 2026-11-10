@@ -64,6 +64,25 @@ var thread = new Thread(() =>
             vm.SelectedSmartView = vm.SmartViews.First(s => s.Value == SmartView.Overdue);
             Check(vm.ActiveView.IsEmpty, "smart view OVERDUE filters out today task");
             vm.SelectedSmartView = vm.SmartViews[0];
+
+            // ── Dakikalık saat işi: hiçbir şey değişmediyse liste yeniden kurulmaz (boştaki CPU sıçraması) ──
+            var due = fatura.DueAt!.Value; // bugün 23:59; saatler sabit, test günün saatine bağlı değil
+            int resets = 0;
+            System.Collections.Specialized.NotifyCollectionChangedEventHandler onReset = (_, e) =>
+            { if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset) resets++; };
+            ((System.Collections.Specialized.INotifyCollectionChanged)vm.ActiveView).CollectionChanged += onReset;
+            bool refreshed = vm.RefreshTimeDependentState(due.AddMinutes(-30));
+            Check(!refreshed && resets == 0 && fatura.DueState == DueState.Today, "minute tick: no state change -> no view rebuild");
+            refreshed = vm.RefreshTimeDependentState(due.AddMinutes(1));
+            Check(refreshed && resets == 1 && fatura.DueState == DueState.Overdue
+                && vm.SmartViews.First(s => s.Value == SmartView.Overdue).Count == 1, "minute tick: TODAY -> OVERDUE refreshes views and counts");
+            refreshed = vm.RefreshTimeDependentState(due.Date.AddDays(2).AddMinutes(30));
+            Check(refreshed && resets == 2, "minute tick: day change alone (state stays OVERDUE) refreshes views");
+            refreshed = vm.RefreshTimeDependentState(due.Date.AddDays(2).AddMinutes(31));
+            Check(!refreshed && resets == 2, "minute tick: same day, same state -> no rebuild");
+            vm.RefreshTimeDependentState(due.AddMinutes(-30)); // bugüne geri dön
+            ((System.Collections.Specialized.INotifyCollectionChanged)vm.ActiveView).CollectionChanged -= onReset;
+            Check(fatura.DueState == DueState.Today, "minute tick: state restored for following tests");
             await vm.DeleteTaskCommand.ExecuteAsync(fatura);
             await vm.UndoCommand.ExecuteAsync(null);
             Check(vm.ActiveTasks.Contains(fatura), "Ctrl+Z undo delete");

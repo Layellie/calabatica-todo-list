@@ -76,6 +76,7 @@ public sealed partial class MainViewModel : ObservableObject
     private DateTime _focusStartedAt;
     private TimeSpan _focusDuration;
     private int _lastClockMinute = -1;
+    private DateOnly _viewsDay;
     private int _nextTaskNumber = 1;
     private bool _initialized;
     private bool _persistenceDisabled;
@@ -426,6 +427,7 @@ public sealed partial class MainViewModel : ObservableObject
         ReadStartupState();
 
         _lastClockMinute = now.Minute;
+        _viewsDay = DateOnly.FromDateTime(now); // görünümler az önce bu gün için kuruldu
         _clock.Start();
         CheckReminders(now); // uygulama kapalıyken kaçırılan hatırlatmalar hemen gösterilir
 
@@ -1457,19 +1459,47 @@ public sealed partial class MainViewModel : ObservableObject
         if (now.Minute != _lastClockMinute)
         {
             _lastClockMinute = now.Minute;
-            foreach (var task in ActiveTasks)
-            {
-                RefreshDueInfo(task, now); // "BUGÜN" → gecikmiş geçişleri
-            }
-
-            RefreshViews(); // akıllı liste üyelikleri ve sayaçlar
-            UpdateQuickAddPreview();
+            RefreshTimeDependentState(now);
         }
 
         if (Today != _chartAnchorDate)
         {
             RebuildChart(); // gece yarısı geçildi
         }
+    }
+
+    /// <summary>
+    /// Dakikalık saat işi: son tarih metinlerini/durumlarını günceller; görünümleri yalnızca bir görevin
+    /// <see cref="DueState"/>'i veya takvim günü değiştiyse yeniler. Koşulsuz <c>Refresh()</c> her dakika tüm
+    /// satırları yeniden kuruyordu; boşta, JIT'in bu yolları dakikalarca parça parça yeniden derlemesine
+    /// (tier-up/PGO) ve küçük listede bile ~1–2 sn tek çekirdek CPU sıçramalarına yol açıyordu.
+    /// </summary>
+    /// <returns>Görünümler yenilendiyse <see langword="true"/>.</returns>
+    internal bool RefreshTimeDependentState(DateTime now)
+    {
+        bool stateChanged = false;
+        foreach (var task in ActiveTasks)
+        {
+            var before = task.DueState;
+            RefreshDueInfo(task, now); // metin bağlama üzerinden güncellenir, liste yenilemesi gerektirmez
+            stateChanged |= task.DueState != before; // "BUGÜN" → gecikmiş: akıllı liste üyeliği değişir
+        }
+
+        // "Yaklaşan" listesi bugüne göre hesaplanır: gün dönünce üyelik değişebilir.
+        var today = DateOnly.FromDateTime(now);
+        if (today != _viewsDay)
+        {
+            _viewsDay = today;
+            stateChanged = true;
+        }
+
+        if (stateChanged)
+        {
+            RefreshViews();
+            UpdateQuickAddPreview(); // "@yarın" önizlemesi güne bağlı
+        }
+
+        return stateChanged;
     }
 
     // ═════════════════════════════ İç işler ═════════════════════════════

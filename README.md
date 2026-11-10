@@ -155,8 +155,9 @@ build-installer.ps1     Builds the app and the installer
 - The chart, calendar and HUD frames are drawn with plain WPF elements; no chart library
 - Glow effects are limited to two static elements to keep list rendering fast
 - Task lists are virtualized: 2,500 tasks load in about 1 second
-- Startup with 2,500 tasks (each measured on its own, interleaved A/B): the data file is read on a background thread while the
-  window is built (905 -> 785 ms median) and panels that start hidden are created on first use (737 -> 644 ms, 36 % fewer visual elements)
+- Startup with 2,500 tasks, window shown (interleaved A/B, 7 runs): 853 -> 649 ms median. The data file is read on a background
+  thread while the window is built (-120 ms measured alone) and panels that start hidden are created on first use (-93 ms alone,
+  36 % fewer visual elements)
 - Add / complete / delete update the list views incrementally instead of re-sorting everything
   (2,500 tasks, median incl. layout: add 75 → 4 ms, complete 100 → 20 ms)
 - Time comes from an injected TimeProvider, so focus, breaks, reminders and midnight are tested with a manual clock

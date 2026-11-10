@@ -161,14 +161,23 @@ build-installer.ps1     Builds the app and the installer
 - Add / complete / delete update the list views incrementally instead of re-sorting everything
   (2,500 tasks, median incl. layout: add 75 → 4 ms, complete 100 → 20 ms)
 - Time comes from an injected TimeProvider, so focus, breaks, reminders and midnight are tested with a manual clock
-- ReadyToRun was measured and left off: ~5 % less startup CPU, no measurable wall-clock gain, twice the exe size
+- Real-path startup (`CALABATICA.exe --startup-benchmark <report>` with `CALABATICA_DATA_DIR` set; the window opens off-screen
+  without focus and never touches your real data), 2,500 tasks, median of 5-7 runs, first render from process start:
+  1,223 -> ~1,050 ms. The tray icon (WinForms) is now attached after the first render (-140 ms) and the release build is
+  ReadyToRun (-65 ms, exe 0.8 -> 1.5 MB). With an empty data file the first render is ~935 ms, i.e. the floor is WPF itself
+  (runtime start ~155 ms, theme + XAML ~450 ms, first layout/render ~200 ms); getting to 300-400 ms would need a different UI stack
+- Tried and rejected: System.Text.Json source generation (the generator cannot see `[ObservableProperty]` members, so task
+  fields were silently dropped; a round-trip test now guards the file format), `gcConcurrent=0`, tiered-compilation switches
+- Task Manager's "Memory" column is the *private* working set: ~60 MB with 2,500 tasks (~47 MB empty). The larger "working set"
+  (~154 MB) includes pages shared with other processes (WPF/.NET images), "private bytes" ~89 MB is committed memory that is not all resident
 - Software rendering is the default: with 2,500 tasks the shown window uses ~150 MB instead of ~265 MB (private 97 vs 212 MB)
   at the same CPU (hover/scroll/idle measured in both modes); the GPU path only added a D3D device and surfaces.
   Set `CALABATICA_RENDER=gpu` to switch back (e.g. on a very high-resolution display)
 - When the window is hidden to the tray (and mini mode is off) the process trims itself once after 8 s:
   working set ~270 MB -> ~15-40 MB (pages return on demand; reserved memory drops less)
 - Measured and left alone: GC settings (`gcConcurrent`, conserve-memory), `TieredPGO` and removing the glow effects
-  (no memory change; startup within noise)- Saves are coalesced (400 ms), serialized on the UI thread and written atomically (temp file + move);
+  (no memory change; startup within noise)
+- Saves are coalesced (400 ms), serialized on the UI thread and written atomically (temp file + move);
   pending changes are flushed on exit and when Windows signs out
 - Backups are written from an in-memory snapshot to `backups\` next to the data file; restore and import
   always back up the current state first

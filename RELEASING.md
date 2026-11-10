@@ -37,8 +37,10 @@ Aynı doğrulama `release.yml`'de yayın oluşturulmadan hemen önce de çalış
 
 ## setup.exe
 - Yerelde: `./build-installer.ps1 -Version 1.0.0` → `artifacts/CALABATICA-Setup-1.0.0.exe`
-- Setup ~0,9 MB. Uygulama **framework-dependent tek exe** (~0,6 MB); kurulum programı .NET Framework 4.8
-  (Windows 10/11'de yerleşik).
+- Setup ~1,6 MB. Uygulama **framework-dependent, ReadyToRun tek exe** (~1,5 MB; ReadyToRun açılışı ~65 ms hızlandırır,
+  ölçüm README'de); kurulum programı .NET Framework 4.8 (Windows 10/11'de yerleşik).
+- Açılış ölçümü: `CALABATICA.exe --startup-benchmark rapor.txt` (+ zorunlu `CALABATICA_DATA_DIR=<boş/geçici klasör>`):
+  pencere ekran dışında, odaksız açılır, gerçek veriye dokunmaz; zaman çizelgesi, JIT ve bellek raporu yazılır.
 - .NET 10 Desktop Runtime yoksa setup `https://aka.ms/dotnet/10.0/windowsdesktop-runtime-win-x64.exe` adresinden
   indirir (~60 MB, bir kerelik), **WinVerifyTrust + "O=Microsoft Corporation" imzalayan** kontrolünden geçirir,
   Microsoft kurulumunu `/install /passive /norestart` ile çalıştırır (UAC onayı Microsoft kurulumundan gelir).

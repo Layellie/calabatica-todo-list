@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/icon.png" width="96" alt="CALABATICA icon" />
+  <img src="docs/social-preview.png" alt="CALABATICA: a neon HUD-style to-do list and activity tracker for Windows" />
 </p>
 
 <h1 align="center">CALABATICA</h1>

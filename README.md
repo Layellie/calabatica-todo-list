@@ -155,7 +155,13 @@ build-installer.ps1     Builds the app and the installer
   (2,500 tasks, median incl. layout: add 75 → 4 ms, complete 100 → 20 ms)
 - Time comes from an injected TimeProvider, so focus, breaks, reminders and midnight are tested with a manual clock
 - ReadyToRun was measured and left off: ~5 % less startup CPU, no measurable wall-clock gain, twice the exe size
-- Saves are coalesced (400 ms), serialized on the UI thread and written atomically (temp file + move);
+- Software rendering is the default: with 2,500 tasks the shown window uses ~150 MB instead of ~265 MB (private 97 vs 212 MB)
+  at the same CPU (hover/scroll/idle measured in both modes); the GPU path only added a D3D device and surfaces.
+  Set `CALABATICA_RENDER=gpu` to switch back (e.g. on a very high-resolution display)
+- When the window is hidden to the tray (and mini mode is off) the process trims itself once after 8 s:
+  working set ~270 MB -> ~15-40 MB (pages return on demand; reserved memory drops less)
+- Measured and left alone: GC settings (`gcConcurrent`, conserve-memory), `TieredPGO` and removing the glow effects
+  (no memory change; startup within noise)- Saves are coalesced (400 ms), serialized on the UI thread and written atomically (temp file + move);
   pending changes are flushed on exit and when Windows signs out
 - Backups are written from an in-memory snapshot to `backups\` next to the data file; restore and import
   always back up the current state first

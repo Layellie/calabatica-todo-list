@@ -26,13 +26,7 @@ public sealed partial class MainViewModel
     internal void Tick()
     {
         var now = Now;
-        for (int i = Toasts.Count - 1; i >= 0; i--)
-        {
-            if (Toasts[i].ExpiresAt is { } expires && now >= expires)
-            {
-                Toasts.RemoveAt(i);
-            }
-        }
+        _toasts.RemoveExpired(now);
 
         if (Focus.Tick(now, _settings.BreaksEnabled) is { } focusEvent)
         {
@@ -89,41 +83,12 @@ public sealed partial class MainViewModel
         return stateChanged;
     }
 
-    /// <summary>Saat girilmemişse hatırlatma tabanı o gün 09:00.</summary>
-    private static DateTime GetReminderMoment(CyberTask task, int minutesBefore)
-    {
-        var due = task.DueAt!.Value;
-        var basis = task.HasDueTime ? due : due.Date.AddHours(9);
-        return basis.AddMinutes(-minutesBefore);
-    }
-
+    /// <summary>Vakti gelen hatırlatmalar bildirime dönüşür (zamanlama mantığı <see cref="ReminderScheduler"/>'da).</summary>
     private void CheckReminders(DateTime now)
     {
-        bool changed = false;
-        foreach (var task in ActiveTasks)
+        var due = ReminderScheduler.CollectDue(ActiveTasks, now);
+        foreach (var task in due)
         {
-            if (task.ReminderMinutesBefore is not { } minutes || task.DueAt is null)
-            {
-                continue;
-            }
-
-            if (task.SnoozedUntil is { } until)
-            {
-                if (now < until)
-                {
-                    continue;
-                }
-
-                task.SnoozedUntil = null; // ertelenen hatırlatma zamanı geldi
-            }
-            else if (task.ReminderFired || now < GetReminderMoment(task, minutes))
-            {
-                continue;
-            }
-
-            task.ReminderFired = true;
-            changed = true;
-
             string message = _loc.Format("Toast_Reminder", task.Code, task.Title);
             if (task.DueText.Length > 0)
             {
@@ -131,7 +96,7 @@ public sealed partial class MainViewModel
             }
 
             // Kullanıcı kapatana kadar kalır; 10 dk / 1 sa erteleme düğmeleri.
-            Toasts.Add(new ToastItem
+            _toasts.Add(new ToastItem
             {
                 Message = message,
                 Kind = ToastKind.Reminder,
@@ -140,20 +105,15 @@ public sealed partial class MainViewModel
                 SecondaryActionLabel = _loc["Snooze_60"],
                 SecondaryAction = () => SnoozeAsync(task, 60),
             });
-            while (Toasts.Count > MaxToasts)
-            {
-                Toasts.RemoveAt(0);
-            }
 
             AttentionRequested?.Invoke(this, message);
         }
 
-        if (changed)
+        if (due.Count > 0)
         {
             _ = SaveAsync();
         }
     }
-
     /// <summary>Hatırlatmayı <paramref name="minutes"/> dakika sonra yeniden gösterir (görev hâlâ aktifse).</summary>
     private async Task SnoozeAsync(CyberTask task, int minutes)
     {

@@ -100,6 +100,7 @@ public sealed partial class MainViewModel : ObservableObject
         _saveTimer.Tick += OnSaveTimerTick;
 
         _loc.PropertyChanged += OnLanguageChanged;
+        _undo.Changed += OnUndoStackChanged;
     }
 
     /// <summary>

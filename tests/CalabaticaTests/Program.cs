@@ -9,6 +9,7 @@ void Check(bool ok, string name) { Console.WriteLine($"{(ok ? "PASS" : "FAIL")} 
 
 string dir = Path.Combine(Path.GetTempPath(), "cybertodo-harness-" + Guid.NewGuid().ToString("N"));
 string path = Path.Combine(dir, "cyber_data.json");
+AppLog.Configure(Path.Combine(dir, "logs")); // testler gerçek log klasörüne yazmasın
 async Task<MainViewModel> Fresh() { var v = new MainViewModel(new StorageService(path)); await v.InitializeAsync(); return v; }
 
 var thread = new Thread(() =>
@@ -849,6 +850,25 @@ var thread = new Thread(() =>
             mn.FlushNow();
             var miniSaved = await StorageService.ReadFileAsync(Path.Combine(dir, "mini.json"));
             Check(!mn.IsMiniMode && miniSaved.Settings.MiniLeft == 120 && miniSaved.Settings.MiniTop == 341, "mini: toggles back, position persisted");
+
+            // ══════════════ Log ══════════════
+            Check(File.Exists(Path.Combine(dir, "logs", "app.log")) && File.ReadAllText(Path.Combine(dir, "logs", "app.log")).Contains("ERROR [MainViewModel]"),
+                "log: caught errors (e.g. invalid import) are written to app.log");
+            string? crash1 = null;
+            for (int i = 0; i < AppLog.MaxCrashFiles + 3; i++)
+            {
+                crash1 ??= AppLog.WriteCrash(new InvalidOperationException("boom " + i), "Test");
+                Thread.Sleep(2); // dosya adı milisaniyeli
+                AppLog.WriteCrash(new InvalidOperationException("boom " + i), "Test");
+            }
+
+            var crashFiles = Directory.GetFiles(Path.Combine(dir, "logs"), "crash-*.log");
+            Check(crashFiles.Length == AppLog.MaxCrashFiles && File.ReadAllText(crashFiles.Max()!).Contains("boom")
+                && File.ReadAllText(crashFiles.Max()!).Contains("Version"), "log: crash report written, newest 10 kept");
+            string bigLog = Path.Combine(dir, "logs", "app.log");
+            File.WriteAllText(bigLog, new string('x', (int)AppLog.MaxAppLogBytes + 10));
+            AppLog.Warn("Test", "after rotate");
+            Check(File.Exists(Path.Combine(dir, "logs", "app.1.log")) && new FileInfo(bigLog).Length < 1000, "log: app.log rotates at 1 MB");
 
             Check(Localizer.MissingKeys().Count == 0, "TR/EN key sets identical after new features: " + string.Join(",", Localizer.MissingKeys()));
 

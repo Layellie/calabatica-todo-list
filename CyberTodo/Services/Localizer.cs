@@ -289,6 +289,7 @@ public sealed class Localizer : ObservableObject
         ["Mini_Empty"] = "// BUGÜN İÇİN GÖREV YOK",
         ["Mini_Idle"] = "Bir görevde ▶ ile odak başlat",
         ["Tray_Mini"] = "Mini mod",
+        ["Crash_Message"] = "CALABATICA beklenmeyen bir hatayla karşılaştı ve kapanacak.\nBekleyen değişiklikler kaydedildi.\n\nHata raporu: {0}",
     };
 
     private static readonly Dictionary<string, string> s_en = new()
@@ -565,6 +566,7 @@ public sealed class Localizer : ObservableObject
         ["Mini_Empty"] = "// NOTHING DUE TODAY",
         ["Mini_Idle"] = "Start focus on a task with ▶",
         ["Tray_Mini"] = "Mini mode",
+        ["Crash_Message"] = "CALABATICA ran into an unexpected error and will close.\nPending changes were saved.\n\nError report: {0}",
     };
 
     private Dictionary<string, string> _strings = s_tr;

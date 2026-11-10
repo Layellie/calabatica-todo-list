@@ -82,6 +82,7 @@ public sealed partial class UpdateService
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
             // Ağ yok / zaman aşımı / depo yok (404) / hız sınırı (403): kullanıcıya gösterilir, uygulama etkilenmez.
+            AppLog.Warn("UpdateCheck", $"{ex.GetType().Name}: {ex.Message}");
             return new UpdateCheckResult(UpdateCheckStatus.Failed, null, ex.Message);
         }
     }

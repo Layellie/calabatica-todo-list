@@ -136,6 +136,7 @@ public sealed partial class UpdateInstaller
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
         {
             // Bilinçli: yalnızca listede görünen sürüm etiketi; güncelleme yine de geçerli. Bir sonraki setup düzeltir.
+            AppLog.Error("RecordInstalledVersion", ex);
         }
     }
 

@@ -637,6 +637,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            AppLog.Error("MainViewModel", ex);
             // Dosya okunamıyor (kilitli/yetki). Boş veriyle devam et ama kaydetme:
             // aksi halde kullanıcının gerçek verisinin üzerine boş veri yazılırdı.
             data = new CyberData();
@@ -1383,6 +1384,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            AppLog.Error("MainViewModel", ex);
             ErrorMessage = _loc.Format("Err_Backup", ex.Message);
         }
     }
@@ -1402,6 +1404,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            AppLog.Error("MainViewModel", ex);
             ErrorMessage = _loc.Format("Err_Backup", ex.Message);
         }
     }
@@ -1416,6 +1419,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            AppLog.Error("MainViewModel", ex);
             ErrorMessage = _loc.Format("Err_Backup", ex.Message);
         }
 
@@ -1466,6 +1470,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
+            AppLog.Error("MainViewModel", ex);
             ErrorMessage = _loc.Format("Err_ReadFile", Path.GetFileName(path), ex.Message);
             return;
         }
@@ -1482,6 +1487,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            AppLog.Error("MainViewModel", ex);
             ErrorMessage = _loc.Format("Err_Backup", ex.Message); // yedeksiz değiştirme yapılmaz
             return;
         }
@@ -1567,6 +1573,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            AppLog.Error("MainViewModel", ex);
             ErrorMessage = _loc.Format("Err_Export", ex.Message);
         }
     }
@@ -1808,6 +1815,7 @@ public sealed partial class MainViewModel : ObservableObject
         catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or IOException or InvalidDataException
                                        or UnauthorizedAccessException or TaskCanceledException or InvalidOperationException)
         {
+            AppLog.Error("MainViewModel", ex);
             UpdateStatusText = _loc.Format("Update_InstallFailed", ex.Message);
             ShowToast(UpdateStatusText, ToastKind.Info, lifetime: TimeSpan.FromSeconds(8));
         }
@@ -2154,6 +2162,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException or InvalidOperationException)
         {
+            AppLog.Error("MainViewModel", ex);
             ErrorMessage = _loc.Format("Err_Startup", ex.Message);
             ReadStartupState();
         }
@@ -2173,6 +2182,7 @@ public sealed partial class MainViewModel : ObservableObject
             }
             catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
             {
+                AppLog.Error("MainViewModel", ex);
                 enabled = false;
                 ErrorMessage = _loc.Format("Err_Startup", ex.Message);
             }
@@ -3107,6 +3117,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            AppLog.Error("MainViewModel", ex);
             _saveDirty = true;
             ErrorMessage = _loc.Format("Err_SaveFailed", ex.Message);
             _errorIsFromSave = true;
@@ -3138,6 +3149,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            AppLog.Error("MainViewModel", ex);
             _saveDirty = true; // bir sonraki değişiklikte / kapanışta yeniden denenir
             ErrorMessage = _loc.Format("Err_SaveFailed", ex.Message);
             _errorIsFromSave = true;

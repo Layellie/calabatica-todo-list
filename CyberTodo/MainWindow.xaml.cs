@@ -29,6 +29,22 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // Arka plan thread'lerinde yakalanmamış hata: süreç zaten sonlanıyor, en azından rapor kalsın.
+        AppDomain.CurrentDomain.UnhandledException += static (_, e) =>
+        {
+            if (e.ExceptionObject is Exception ex)
+            {
+                AppLog.WriteCrash(ex, "AppDomain");
+            }
+        };
+
+        // Beklenmemiş (await edilmemiş) Task hataları: uygulamayı düşürmez ama kaybolmasın.
+        TaskScheduler.UnobservedTaskException += static (_, e) =>
+        {
+            AppLog.Error("UnobservedTask", e.Exception);
+            e.SetObserved();
+        };
+
         // Tek örnek: tepside çalışırken exe'ye tekrar tıklanırsa ikinci kopya açılmaz (aynı JSON'a iki yazar olurdu),
         // mevcut pencereye "göster" sinyali gider.
         using var mutex = new Mutex(initiallyOwned: true, MutexName, out bool createdNew);
@@ -67,6 +83,14 @@ public static class Program
         bool startHidden = args.Any(static a => string.Equals(a, RegistryStartupRegistration.TrayArgument, StringComparison.OrdinalIgnoreCase));
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         var window = new MainWindow(startHidden);
+
+        // UI thread'inde yakalanmamış hata: rapor yaz, bekleyen kaydı diske indir, kullanıcıya söyle, düzgün kapan.
+        // Bilinmeyen bir hatadan sonra çalışmaya devam etmek veriyi tutarsız bırakabilir; bu yüzden devam edilmez.
+        app.DispatcherUnhandledException += (_, e) =>
+        {
+            e.Handled = true;
+            window.HandleFatalError(e.Exception);
+        };
 
         var registration = ThreadPool.RegisterWaitForSingleObject(
             showEvent,
@@ -158,6 +182,40 @@ public partial class MainWindow : Window
         }
     }
 
+    private bool _handlingFatalError;
+
+    /// <summary>Yakalanmamış UI hatası: rapor + acil kayıt + bilgi kutusu + kapanış. İkinci hata gelirse doğrudan kapanır.</summary>
+    public void HandleFatalError(Exception exception)
+    {
+        if (_handlingFatalError)
+        {
+            Application.Current.Shutdown();
+            return;
+        }
+
+        _handlingFatalError = true;
+        string? reportPath = AppLog.WriteCrash(exception, "Dispatcher");
+
+        try
+        {
+            _viewModel.FlushNow(); // kendi I/O hatalarını yakalar; buradaki geniş catch çökme sınırı içindir
+        }
+        catch (Exception flushError)
+        {
+            AppLog.Error("FlushOnCrash", flushError);
+        }
+
+        MessageBox.Show(
+            Localizer.Instance.Format("Crash_Message", reportPath ?? AppLog.Directory),
+            "CALABATICA",
+            MessageBoxButton.OK,
+            MessageBoxImage.Error);
+
+        _mini?.CloseForShutdown();
+        _tray.Dispose();
+        Application.Current.Shutdown();
+    }
+
     /// <summary>Tepsiden / ikinci örnekten / bildirime tıklamadan pencereyi öne getirir (mini moddaysa tam görünüme döner).</summary>
     public void ShowFromTray()
     {
@@ -212,6 +270,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
+            AppLog.Error("MainWindow", ex);
             // Yeni exe yerinde; bir sonraki elle açılışta yeni sürüm çalışır.
             _viewModel.ErrorMessage = ex.Message;
             return;
@@ -705,6 +764,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
+            AppLog.Error("MainWindow", ex);
             _viewModel.ErrorMessage = ex.Message;
         }
     }

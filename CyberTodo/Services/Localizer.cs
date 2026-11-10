@@ -636,6 +636,10 @@ public sealed class Localizer : ObservableObject
         OnPropertyChanged(nameof(Culture));
     }
 
+    /// <summary>Tanımlı anahtarlar (kullanım taraması testi için).</summary>
+    internal static IReadOnlyCollection<string> Keys(AppLanguage language) =>
+        language == AppLanguage.English ? s_en.Keys : s_tr.Keys;
+
     /// <summary>Test/tutarlılık kontrolü: iki dilde de aynı anahtar seti olmalı.</summary>
     public static IReadOnlyCollection<string> MissingKeys() =>
         [.. s_tr.Keys.Except(s_en.Keys), .. s_en.Keys.Except(s_tr.Keys)];

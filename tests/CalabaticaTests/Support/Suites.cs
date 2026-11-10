@@ -17,6 +17,7 @@ internal static class Suites
         (nameof(ViewsAndOnboardingTests), ViewsAndOnboardingTests.Run),
         (nameof(DataAndPlatformTests), DataAndPlatformTests.Run),
         (nameof(ExtractedClassesTests), ExtractedClassesTests.Run),
+        (nameof(LocalizationTests), static ctx => LocalizationTests.Run(ctx)),
         (nameof(PackageVerificationTests), PackageVerificationTests.Run),
         (nameof(LoggingTests), LoggingTests.Run),
         (nameof(UiSmokeTests), UiSmokeTests.Run),

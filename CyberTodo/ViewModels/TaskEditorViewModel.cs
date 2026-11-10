@@ -320,6 +320,24 @@ public sealed partial class TaskEditorViewModel : ObservableObject
     /// <summary>Doğrular ve geçerliyse hedef göreve yazar. Geçersizse ValidationError dolar, görev değişmez.</summary>
     public bool TryApply()
     {
+        if (!TryValidate(out var values))
+        {
+            return false;
+        }
+
+        WriteToTarget(values);
+        ValidationError = null;
+        return true;
+    }
+
+    /// <summary>Doğrulanmış, ayrıştırılmış alanlar (göreve yazılmaya hazır).</summary>
+    private readonly record struct EditedValues(
+        string Title, double Hours, DateTime? DueAt, bool HasDueTime, Recurrence Recurrence, WeekDays RepeatDays, int? Reminder);
+
+    /// <summary>Alanları sırayla doğrular (ilk hata kazanır: başlık, süre, tarih, saat, gün seçimi, hatırlatıcı); görevi değiştirmez.</summary>
+    private bool TryValidate(out EditedValues values)
+    {
+        values = default;
         var loc = Localizer.Instance;
 
         string title = Title.Trim();
@@ -388,11 +406,15 @@ public sealed partial class TaskEditorViewModel : ObservableObject
             return false;
         }
 
-        DateTime? dueAt = dueDate?.ToDateTime(dueTime ?? TimeOnly.MinValue);
-        bool hasDueTime = dueTime is not null;
+        values = new EditedValues(
+            title, hours, dueDate?.ToDateTime(dueTime ?? TimeOnly.MinValue), dueTime is not null, recurrence, repeatDays, reminder);
+        return true;
+    }
 
+    private void WriteToTarget(EditedValues values)
+    {
         // Zaman veya hatırlatıcı değiştiyse hatırlatma yeniden kurulmalı.
-        if (dueAt != Target.DueAt || hasDueTime != Target.HasDueTime || reminder != Target.ReminderMinutesBefore)
+        if (values.DueAt != Target.DueAt || values.HasDueTime != Target.HasDueTime || values.Reminder != Target.ReminderMinutesBefore)
         {
             Target.ReminderFired = false;
             Target.SnoozedUntil = null; // eski zamana göre ertelenmişti
@@ -400,24 +422,21 @@ public sealed partial class TaskEditorViewModel : ObservableObject
 
         string category = Category.Trim();
         string notes = Notes.Trim();
-        Target.Title = title.Length > MaxTitleLength ? title[..MaxTitleLength] : title;
+        Target.Title = values.Title.Length > MaxTitleLength ? values.Title[..MaxTitleLength] : values.Title;
         Target.Notes = notes.Length == 0 ? null : (notes.Length > MaxNotesLength ? notes[..MaxNotesLength] : notes);
         Target.Category = category.Length == 0 ? null : (category.Length > MaxCategoryLength ? category[..MaxCategoryLength] : category);
-        Target.EstimatedHours = hours;
+        Target.EstimatedHours = values.Hours;
         Target.Priority = SelectedPriority?.Value ?? TaskPriority.Active;
-        Target.DueAt = dueAt;
-        Target.HasDueTime = hasDueTime;
-        Target.Recurrence = recurrence;
-        Target.RepeatDays = repeatDays;
-        Target.ReminderMinutesBefore = reminder;
+        Target.DueAt = values.DueAt;
+        Target.HasDueTime = values.HasDueTime;
+        Target.Recurrence = values.Recurrence;
+        Target.RepeatDays = values.RepeatDays;
+        Target.ReminderMinutesBefore = values.Reminder;
 
         Target.Subtasks.Clear();
         foreach (var draft in Subtasks)
         {
             Target.Subtasks.Add(new SubTask { Title = draft.Title, IsDone = draft.IsDone });
         }
-
-        ValidationError = null;
-        return true;
     }
 }

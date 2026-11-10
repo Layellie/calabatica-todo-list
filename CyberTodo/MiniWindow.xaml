@@ -1,0 +1,287 @@
+<Window x:Class="CyberTodo.MiniWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:po="http://schemas.microsoft.com/winfx/2006/xaml/presentation/options"
+        xmlns:local="clr-namespace:CyberTodo"
+        xmlns:models="clr-namespace:CyberTodo.Models"
+        xmlns:loc="clr-namespace:CyberTodo.Services"
+        mc:Ignorable="po"
+        Title="CALABATICA"
+        Icon="pack://application:,,,/Assets/calabatica.ico"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        SizeToContent="WidthAndHeight"
+        WindowStartupLocation="Manual"
+        Topmost="True"
+        ShowInTaskbar="False"
+        Background="#000000"
+        Foreground="#00F0FF"
+        FontFamily="Cascadia Mono, Consolas"
+        FontSize="13"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True">
+
+    <!-- Mini mod: her zaman üstte; odak/mola sayacı + bugün ve gecikmiş görevler. DataContext = MainViewModel. -->
+    <Window.InputBindings>
+        <KeyBinding Key="M" Modifiers="Control" Command="{Binding ToggleMiniModeCommand}" />
+        <KeyBinding Key="Z" Modifiers="Control" Command="{Binding UndoCommand}" />
+    </Window.InputBindings>
+
+    <Window.Resources>
+        <!-- Tema anahtarları MainWindow.ApplyTheme ile bu sözlükte de değiştirilir -->
+        <SolidColorBrush x:Key="YellowBrush" Color="#FCEE0A" />
+        <SolidColorBrush x:Key="CyanBrush" Color="#00F0FF" />
+        <SolidColorBrush x:Key="YellowDimBrush" Color="#55FCEE0A" />
+        <SolidColorBrush x:Key="CyanDimBrush" Color="#6600F0FF" />
+        <SolidColorBrush x:Key="CyanFaintBrush" Color="#1F00F0FF" />
+        <SolidColorBrush x:Key="AxisTextBrush" Color="#5CA9B3" />
+        <SolidColorBrush x:Key="PrimaryDeepBrush" Color="#1A1800" />
+
+        <SolidColorBrush x:Key="RedBrush" Color="#FF003C" po:Freeze="True" />
+        <SolidColorBrush x:Key="GreyBrush" Color="#4A5568" po:Freeze="True" />
+        <SolidColorBrush x:Key="PanelBrush" Color="#050A0E" po:Freeze="True" />
+        <SolidColorBrush x:Key="PanelAltBrush" Color="#070D12" po:Freeze="True" />
+        <SolidColorBrush x:Key="SubtleTextBrush" Color="#8A94A6" po:Freeze="True" />
+        <SolidColorBrush x:Key="HitTestBrush" Color="#01000000" po:Freeze="True" />
+
+        <Style x:Key="MiniIconButton" TargetType="Button">
+            <Setter Property="Width" Value="26" />
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Margin" Value="4,0,0,0" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Foreground" Value="{StaticResource SubtleTextBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="Transparent" BorderBrush="Transparent" BorderThickness="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="False" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{Binding Foreground, RelativeSource={RelativeSource TemplatedParent}}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource CyanBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="MiniCheckButton" TargetType="Button">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CyanBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid Background="{StaticResource PanelAltBrush}">
+                            <Border BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1.5" />
+                            <Path x:Name="Check" Data="M4,10 L8,14 L16,6" Stroke="{TemplateBinding BorderBrush}" StrokeThickness="1.5" Visibility="Hidden" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Check" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="MiniProgress" TargetType="ProgressBar">
+            <Setter Property="Minimum" Value="0" />
+            <Setter Property="Maximum" Value="1" />
+            <Setter Property="Height" Value="5" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Grid Background="#0A1016">
+                            <Grid x:Name="PART_Track">
+                                <Rectangle x:Name="PART_Indicator" Fill="{TemplateBinding Foreground}" HorizontalAlignment="Left" />
+                            </Grid>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Width="360">
+        <Grid.LayoutTransform>
+            <ScaleTransform ScaleX="{Binding UiScale}" ScaleY="{Binding UiScale}" />
+        </Grid.LayoutTransform>
+        <local:ChamferFrame Fill="{StaticResource PanelBrush}" Stroke="{DynamicResource CyanBrush}" StrokeThickness="1.5"
+                            Chamfer="14" Corners="TopLeft, BottomRight" />
+
+        <StackPanel Margin="16,10,14,14">
+            <!-- Başlık (sürüklenebilir) -->
+            <Grid Background="{StaticResource HitTestBrush}" MouseLeftButtonDown="Header_MouseLeftButtonDown">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock VerticalAlignment="Center" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource YellowBrush}" Text="CALABATICA" />
+                <Button Grid.Column="1" Style="{StaticResource MiniIconButton}" Content="⤢" Foreground="{DynamicResource YellowBrush}"
+                        AutomationProperties.Name="{loc:Tr Tip_MiniExpand}" ToolTip="{loc:Tr Tip_MiniExpand}" Command="{Binding ToggleMiniModeCommand}" />
+                <Button Grid.Column="2" Style="{StaticResource MiniIconButton}" Content="✕"
+                        AutomationProperties.Name="{loc:Tr Tip_MiniHide}" ToolTip="{loc:Tr Tip_MiniHide}" Click="Hide_Click" />
+            </Grid>
+            <Rectangle Height="1" Margin="0,8,0,10" Fill="{DynamicResource YellowDimBrush}" />
+
+            <!-- Odak -->
+            <StackPanel>
+                <StackPanel.Visibility>
+                    <Binding Path="IsFocusRunning">
+                        <Binding.Converter>
+                            <BooleanToVisibilityConverter />
+                        </Binding.Converter>
+                    </Binding>
+                </StackPanel.Visibility>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock VerticalAlignment="Center" Foreground="{DynamicResource YellowBrush}" TextTrimming="CharacterEllipsis">
+                        <Run Text="◉ " /><Run Text="{Binding FocusTask.Code, Mode=OneWay}" /><Run Text=" " /><Run Text="{Binding FocusTask.Title, Mode=OneWay}" />
+                    </TextBlock>
+                    <TextBlock Grid.Column="1" Margin="10,0,4,0" VerticalAlignment="Center" FontSize="22" FontWeight="Bold"
+                               Foreground="{DynamicResource YellowBrush}" Text="{Binding FocusRemainingText}" />
+                    <Button Grid.Column="2" Style="{StaticResource MiniIconButton}" Content="■" Foreground="{DynamicResource YellowBrush}"
+                            AutomationProperties.Name="{loc:Tr Tip_StopFocus}" ToolTip="{loc:Tr Tip_StopFocus}" Command="{Binding StopFocusCommand}" />
+                </Grid>
+                <ProgressBar Margin="0,6,0,0" Style="{StaticResource MiniProgress}" Foreground="{DynamicResource YellowBrush}"
+                             Value="{Binding FocusProgress, Mode=OneWay}" />
+            </StackPanel>
+
+            <!-- Mola -->
+            <StackPanel>
+                <StackPanel.Visibility>
+                    <Binding Path="IsOnBreak">
+                        <Binding.Converter>
+                            <BooleanToVisibilityConverter />
+                        </Binding.Converter>
+                    </Binding>
+                </StackPanel.Visibility>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock VerticalAlignment="Center" Foreground="{DynamicResource CyanBrush}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Text" Value="{loc:Tr Break_Label}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsLongBreak}" Value="True">
+                                        <Setter Property="Text" Value="{loc:Tr Break_Long}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Grid.Column="1" Margin="10,0,4,0" VerticalAlignment="Center" FontSize="22" FontWeight="Bold"
+                               Foreground="{DynamicResource CyanBrush}" Text="{Binding BreakRemainingText}" />
+                    <Button Grid.Column="2" Style="{StaticResource MiniIconButton}" Content="⏭" Foreground="{DynamicResource CyanBrush}"
+                            AutomationProperties.Name="{loc:Tr Tip_SkipBreak}" ToolTip="{loc:Tr Tip_SkipBreak}" Command="{Binding SkipBreakCommand}" />
+                </Grid>
+                <ProgressBar Margin="0,6,0,0" Style="{StaticResource MiniProgress}" Foreground="{DynamicResource CyanBrush}"
+                             Value="{Binding BreakProgress, Mode=OneWay}" />
+            </StackPanel>
+
+            <!-- Boşta: ipucu -->
+            <TextBlock FontSize="12" Foreground="{StaticResource GreyBrush}" Text="{loc:Tr Mini_Idle}">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsFocusRunning}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsOnBreak}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+
+            <TextBlock Margin="0,14,0,6" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource SubtleTextBrush}" Text="{loc:Tr Mini_Today}" />
+
+            <ScrollViewer MaxHeight="320" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                          Focusable="False" RenderOptions.EdgeMode="Aliased">
+                <ItemsControl Focusable="False" ItemsSource="{Binding MiniTasks}" RenderOptions.EdgeMode="Unspecified">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type models:CyberTask}">
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Button x:Name="Check" Margin="0,0,10,0" VerticalAlignment="Center" Style="{StaticResource MiniCheckButton}"
+                                        AutomationProperties.Name="{loc:Tr Tip_Complete}" ToolTip="{loc:Tr Tip_Complete}"
+                                        Command="{Binding DataContext.CompleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding}" />
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock x:Name="Title" FontSize="14" Foreground="{DynamicResource CyanBrush}" TextTrimming="CharacterEllipsis">
+                                        <Run Text="{Binding Code, Mode=OneWay}" /><Run Text=" " /><Run Text="{Binding Title, Mode=OneWay}" />
+                                    </TextBlock>
+                                    <TextBlock x:Name="Due" FontSize="11" Foreground="{DynamicResource YellowBrush}">
+                                        <Run Text="⏱ " /><Run Text="{Binding DueText, Mode=OneWay}" />
+                                    </TextBlock>
+                                </StackPanel>
+                                <Button x:Name="FocusBtn" Grid.Column="2" Style="{StaticResource MiniIconButton}" Content="▶"
+                                        AutomationProperties.Name="{loc:Tr Tip_Focus}" ToolTip="{loc:Tr Tip_Focus}"
+                                        Command="{Binding DataContext.StartFocusCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding}" />
+                            </Grid>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding DueState}" Value="Overdue">
+                                    <Setter TargetName="Due" Property="Foreground" Value="{StaticResource RedBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Priority}" Value="HighPriority">
+                                    <Setter TargetName="Check" Property="BorderBrush" Value="{StaticResource RedBrush}" />
+                                    <Setter TargetName="Title" Property="Foreground" Value="{StaticResource RedBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Priority}" Value="Decrypting">
+                                    <Setter TargetName="Check" Property="BorderBrush" Value="{DynamicResource YellowBrush}" />
+                                    <Setter TargetName="Title" Property="Foreground" Value="{DynamicResource YellowBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsFocused}" Value="True">
+                                    <Setter TargetName="FocusBtn" Property="Content" Value="■" />
+                                    <Setter TargetName="FocusBtn" Property="Foreground" Value="{DynamicResource YellowBrush}" />
+                                    <Setter TargetName="FocusBtn" Property="ToolTip" Value="{loc:Tr Tip_StopFocus}" />
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <TextBlock FontSize="12" Foreground="{StaticResource GreyBrush}" Text="{loc:Tr Mini_Empty}">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasMiniTasks}" Value="False">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </StackPanel>
+    </Grid>
+</Window>

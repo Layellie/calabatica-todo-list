@@ -390,6 +390,7 @@ public sealed partial class TaskEditorViewModel : ObservableObject
         if (dueAt != Target.DueAt || hasDueTime != Target.HasDueTime || reminder != Target.ReminderMinutesBefore)
         {
             Target.ReminderFired = false;
+            Target.SnoozedUntil = null; // eski zamana göre ertelenmişti
         }
 
         string category = Category.Trim();

@@ -142,6 +142,125 @@ public static class InsightsBuilder
     private static bool HasCompletion(IReadOnlyDictionary<DateOnly, DayActivity> days, DateOnly date) =>
         days.TryGetValue(date, out var day) && day.CompletedCount > 0;
 
+    // ───────────────────────────── Alışkanlıklar ─────────────────────────────
+
+    public const int HabitStripDays = 28;
+    private const int HabitLookbackDays = 400;
+
+    /// <summary>
+    /// Aktif bir kopyası olan her tekrar zinciri (SeriesId) için seri, en iyi seri, 30 günlük oran ve son 28 günün şeridi.
+    /// Bir tekrarın "yapıldı" günü, tamamlanan kopyanın son tarih günüdür (geç tamamlansa da o güne sayılır);
+    /// tarihsizse tamamlanma günü. Bugün planlı ama henüz yapılmamışsa seri bozulmuş sayılmaz.
+    /// </summary>
+    public static List<HabitRow> BuildHabits(
+        IEnumerable<CyberTask> activeTasks,
+        IEnumerable<CyberTask> completedTasks,
+        DateOnly today,
+        Localizer loc,
+        Func<CyberTask, string> formatRecurrence)
+    {
+        var completedBySeries = completedTasks
+            .Where(static t => t.SeriesId is not null)
+            .GroupBy(static t => t.SeriesId!.Value)
+            .ToDictionary(static g => g.Key, static g => g.ToList());
+
+        var rows = new List<HabitRow>();
+        var culture = loc.Culture;
+        foreach (var current in activeTasks.Where(static t => t.Recurrence != Recurrence.None))
+        {
+            var seriesId = current.SeriesId ?? current.Id;
+            var done = completedBySeries.TryGetValue(seriesId, out var completed) ? completed : [];
+            var doneDates = done
+                .Select(static t => DateOnly.FromDateTime(t.DueAt ?? t.CompletedAt ?? t.CreatedAt))
+                .ToHashSet();
+
+            var anchor = current.DueAt ?? current.CreatedAt;
+            var start = DateOnly.FromDateTime(done.Select(static t => t.CreatedAt).Append(current.CreatedAt).Min());
+            if (doneDates.Count > 0 && doneDates.Min() < start)
+            {
+                start = doneDates.Min();
+            }
+
+            bool IsScheduled(DateOnly date) => current.Recurrence switch
+            {
+                Recurrence.Daily => true,
+                Recurrence.Weekly => date.DayOfWeek == anchor.DayOfWeek,
+                Recurrence.Monthly => date.Day == Math.Min(anchor.Day, DateTime.DaysInMonth(date.Year, date.Month)),
+                Recurrence.SelectedDays => RecurrenceRules.Contains(current.RepeatDays, date.DayOfWeek),
+                _ => false,
+            };
+
+            // Bugün planlı ama yapılmamışsa bekliyor: seriyi bozmaz, oran hesabına girmez.
+            bool todayPending = IsScheduled(today) && !doneDates.Contains(today);
+
+            int streak = 0;
+            for (var date = todayPending ? today.AddDays(-1) : today; date >= start && date > today.AddDays(-HabitLookbackDays); date = date.AddDays(-1))
+            {
+                if (!IsScheduled(date))
+                {
+                    continue;
+                }
+
+                if (!doneDates.Contains(date))
+                {
+                    break;
+                }
+
+                streak++;
+            }
+
+            int best = 0, run = 0;
+            var from = start > today.AddDays(-HabitLookbackDays) ? start : today.AddDays(-HabitLookbackDays);
+            for (var date = from; date <= today; date = date.AddDays(1))
+            {
+                if (!IsScheduled(date) || (date == today && todayPending))
+                {
+                    continue;
+                }
+
+                run = doneDates.Contains(date) ? run + 1 : 0;
+                best = Math.Max(best, run);
+            }
+
+            int planned = 0, hit = 0;
+            for (var date = today.AddDays(-29); date <= today; date = date.AddDays(1))
+            {
+                if (date < start || !IsScheduled(date) || (date == today && todayPending))
+                {
+                    continue;
+                }
+
+                planned++;
+                if (doneDates.Contains(date))
+                {
+                    hit++;
+                }
+            }
+
+            var cells = new List<HabitCell>(HabitStripDays);
+            for (var date = today.AddDays(-(HabitStripDays - 1)); date <= today; date = date.AddDays(1))
+            {
+                var state = date < start || !IsScheduled(date) ? HabitCellState.Off
+                    : doneDates.Contains(date) ? HabitCellState.Done
+                    : date == today ? HabitCellState.Pending
+                    : HabitCellState.Missed;
+                string label = date.ToString(loc["Fmt_ShortDate"], culture).ToUpper(culture);
+                cells.Add(new HabitCell(date, state, $"{label} · {loc["Habit_State_" + state]}"));
+            }
+
+            rows.Add(new HabitRow(
+                $"{current.Code} {current.Title}",
+                formatRecurrence(current),
+                streak,
+                streak.ToString(culture),
+                loc.Format("Habit_Best", best),
+                planned == 0 ? loc["Stat_None"] : ((double)hit / planned).ToString("0%", culture),
+                cells));
+        }
+
+        return [.. rows.OrderByDescending(static r => r.Streak).ThenBy(static r => r.Title, StringComparer.CurrentCultureIgnoreCase)];
+    }
+
     // ───────────────────────────── Odak ─────────────────────────────
 
     public const int FocusTopCount = 6;

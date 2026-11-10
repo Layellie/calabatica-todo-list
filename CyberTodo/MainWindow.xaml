@@ -33,6 +33,7 @@
     <Window.InputBindings>
         <KeyBinding Key="Z" Modifiers="Control" Command="{Binding UndoCommand}" />
         <KeyBinding Key="OemComma" Modifiers="Control" Command="{Binding OpenSettingsCommand}" />
+        <KeyBinding Key="M" Modifiers="Control" Command="{Binding ToggleMiniModeCommand}" />
         <KeyBinding Key="Escape" Command="{Binding EscapeCommand}" />
     </Window.InputBindings>
 
@@ -45,6 +46,7 @@
         <SolidColorBrush x:Key="YellowBrush" Color="#FCEE0A" po:Freeze="True" />
         <SolidColorBrush x:Key="CyanBrush" Color="#00F0FF" po:Freeze="True" />
         <SolidColorBrush x:Key="RedBrush" Color="#FF003C" po:Freeze="True" />
+        <SolidColorBrush x:Key="RedDimBrush" Color="#5C0016" po:Freeze="True" />
         <SolidColorBrush x:Key="GreenBrush" Color="#00FF66" po:Freeze="True" />
         <SolidColorBrush x:Key="GreyBrush" Color="#4A5568" po:Freeze="True" />
         <SolidColorBrush x:Key="WhiteBrush" Color="#FFFFFF" po:Freeze="True" />
@@ -157,9 +159,9 @@
         <Style x:Key="TabButton" TargetType="Button" BasedOn="{StaticResource ChamferButton}">
             <Setter Property="Background" Value="{StaticResource PanelBrush}" />
             <Setter Property="FontSize" Value="15" />
-            <Setter Property="Padding" Value="16,8" />
-            <Setter Property="MinWidth" Value="120" />
-            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="Padding" Value="13,8" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Margin" Value="0,0,6,0" />
         </Style>
 
         <!-- Pencere butonları (ayarlar / küçült / kapat) -->
@@ -655,7 +657,7 @@
         <DataTemplate x:Key="ActiveTaskTemplate" DataType="{x:Type models:CyberTask}">
             <!-- Sürükle-bırak: satır bırakma hedefi; tutamaç (⠿) veya başlıktan sürüklenir -->
             <Grid x:Name="Row" Margin="0,0,10,20" Background="Transparent"
-                  AllowDrop="True" DragOver="Row_DragOver" Drop="Row_Drop">
+                  AllowDrop="True" DragOver="Row_DragOver" Drop="Row_Drop" MouseLeftButtonDown="Row_MouseLeftButtonDown">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
@@ -668,6 +670,11 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
+
+                <!-- Klavye seçimi: solda dikey çizgi + hafif zemin (Opacity değil renk; kesirli ölçekte iz bırakmaz) -->
+                <Border x:Name="SelectionMark" Grid.RowSpan="4" Grid.ColumnSpan="4" Margin="-8,-6,-4,-8"
+                        Background="{DynamicResource CyanFaintBrush}" BorderBrush="{DynamicResource YellowBrush}" BorderThickness="3,0,0,0"
+                        Visibility="Collapsed" IsHitTestVisible="False" />
 
                 <!-- Bırakma çizgisi: sürüklenen görev bu satırın üstüne gelecek -->
                 <Border x:Name="DropLine" Grid.ColumnSpan="4" Height="3" Margin="0,-12,0,0" VerticalAlignment="Top"
@@ -848,6 +855,9 @@
                 <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
                     <Setter TargetName="DropLine" Property="Visibility" Value="Visible" />
                 </DataTrigger>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter TargetName="SelectionMark" Property="Visibility" Value="Visible" />
+                </DataTrigger>
                 <DataTrigger Binding="{Binding IsDropAfter}" Value="True">
                     <Setter TargetName="DropLine" Property="VerticalAlignment" Value="Bottom" />
                     <Setter TargetName="DropLine" Property="Grid.Row" Value="3" />
@@ -972,6 +982,7 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <TextBlock x:Name="ToastText" VerticalAlignment="Center" FontSize="14" TextWrapping="Wrap"
                                Foreground="{DynamicResource CyanBrush}" Text="{Binding Message}" />
@@ -979,7 +990,11 @@
                             Content="{Binding ActionLabel}"
                             Command="{Binding DataContext.RunToastActionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding}" />
-                    <Button Grid.Column="2" Style="{StaticResource IconButton}" Content="✕" AutomationProperties.Name="{loc:Tr Tip_Dismiss}" ToolTip="{loc:Tr Tip_Dismiss}"
+                    <Button x:Name="ToastSecondary" Grid.Column="2" Style="{StaticResource SmallButton}"
+                            Content="{Binding SecondaryActionLabel}"
+                            Command="{Binding DataContext.RunToastSecondaryActionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding}" />
+                    <Button Grid.Column="3" Style="{StaticResource IconButton}" Content="✕" AutomationProperties.Name="{loc:Tr Tip_Dismiss}" ToolTip="{loc:Tr Tip_Dismiss}"
                             Command="{Binding DataContext.DismissToastCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding}" />
                 </Grid>
@@ -987,6 +1002,9 @@
             <DataTemplate.Triggers>
                 <DataTrigger Binding="{Binding HasAction}" Value="False">
                     <Setter TargetName="ToastAction" Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding HasSecondaryAction}" Value="False">
+                    <Setter TargetName="ToastSecondary" Property="Visibility" Value="Collapsed" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Kind}" Value="Reminder">
                     <Setter TargetName="ToastFrame" Property="Stroke" Value="{DynamicResource YellowBrush}" />
@@ -1132,6 +1150,48 @@
                         </Grid>
                     </Grid>
 
+                    <!-- Mola göstergesi: odak bitince (cyan; odakla aynı yerde, ikisi aynı anda görünmez) -->
+                    <Grid Grid.Column="1" VerticalAlignment="Center" Margin="20,0">
+                        <Grid.Visibility>
+                            <Binding Path="IsOnBreak">
+                                <Binding.Converter>
+                                    <BooleanToVisibilityConverter />
+                                </Binding.Converter>
+                            </Binding>
+                        </Grid.Visibility>
+                        <local:ChamferFrame Fill="{StaticResource PanelAltBrush}" Stroke="{DynamicResource CyanBrush}"
+                                            StrokeThickness="1.5" Chamfer="8" Corners="TopLeft, BottomRight" />
+                        <Grid Margin="14,6,8,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock x:Name="BreakLabel" VerticalAlignment="Center" FontSize="14" Foreground="{DynamicResource CyanBrush}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="{loc:Tr Break_Label}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsLongBreak}" Value="True">
+                                                <Setter Property="Text" Value="{loc:Tr Break_Long}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock Grid.Column="1" Margin="14,0,10,0" VerticalAlignment="Center" FontSize="20" FontWeight="Bold"
+                                       Foreground="{DynamicResource CyanBrush}" Text="{Binding BreakRemainingText}" />
+                            <Button Grid.Column="2" Style="{StaticResource IconButton}" Content="⏭" Foreground="{DynamicResource CyanBrush}"
+                                    AutomationProperties.Name="{loc:Tr Tip_SkipBreak}" ToolTip="{loc:Tr Tip_SkipBreak}" Command="{Binding SkipBreakCommand}" />
+                            <ProgressBar Grid.Row="1" Grid.ColumnSpan="3" Height="5" Margin="0,5,0,0" Style="{StaticResource NeonProgress}"
+                                         Foreground="{DynamicResource CyanBrush}" Maximum="1" Value="{Binding BreakProgress, Mode=OneWay}" />
+                        </Grid>
+                    </Grid>
+
                     <StackPanel VerticalAlignment="Center">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock FontSize="32" FontWeight="Bold" Foreground="{DynamicResource YellowBrush}" TextTrimming="CharacterEllipsis">
@@ -1177,6 +1237,7 @@
 
                     <!-- Başlıkla aynı dikey eksende (simetri) -->
                     <StackPanel Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Orientation="Horizontal">
+                        <Button Style="{StaticResource CaptionButton}" Content="⇲" AutomationProperties.Name="{loc:Tr Tip_Mini}" ToolTip="{loc:Tr Tip_Mini}" Command="{Binding ToggleMiniModeCommand}" />
                         <Button Style="{StaticResource CaptionButton}" Content="⚙" AutomationProperties.Name="{loc:Tr Tip_Settings}" ToolTip="{loc:Tr Tip_Settings}" Command="{Binding OpenSettingsCommand}" />
                         <Button Style="{StaticResource CaptionButton}" Content="─" AutomationProperties.Name="{loc:Tr Tip_Minimize}" ToolTip="{loc:Tr Tip_Minimize}" Click="Minimize_Click" />
                         <Button Style="{StaticResource CaptionCloseButton}" Content="✕" AutomationProperties.Name="{loc:Tr Tip_Close}" ToolTip="{loc:Tr Tip_Close}" Click="Close_Click" />
@@ -1324,7 +1385,7 @@
                         <!-- Aktif görevler -->
                         <Grid Grid.Row="3">
                             <!-- Sanal liste; satırların altındaki boş alana bırakılırsa listenin sonuna taşınır -->
-                            <ItemsControl x:Name="ActiveList" Style="{StaticResource VirtualList}"
+                            <ItemsControl x:Name="ActiveList" Style="{StaticResource VirtualList}" Focusable="True" FocusVisualStyle="{x:Null}"
                                           ItemsSource="{Binding ActiveView}" ItemTemplate="{StaticResource ActiveTaskTemplate}"
                                           AllowDrop="True" DragOver="ListEnd_DragOver" Drop="ListEnd_Drop" />
                             <TextBlock Margin="46,6,0,0" FontSize="15" Foreground="{StaticResource GreyBrush}" Text="{loc:Tr Empty_Active}">
@@ -1479,6 +1540,18 @@
                                                 </Style>
                                             </Button.Style>
                                         </Button>
+                                        <Button Content="{loc:Tr Tab_Habits}" Command="{Binding ShowHabitsCommand}">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource TabButton}">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ChartMode}" Value="Habits">
+                                                            <Setter Property="Background" Value="{DynamicResource CyanBrush}" />
+                                                            <Setter Property="Foreground" Value="{StaticResource BlackBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
                                     </WrapPanel>
                                 </Grid>
 
@@ -1613,6 +1686,91 @@
                                             </TextBlock.Style>
                                         </TextBlock>
                                     </Grid>
+                                </Grid>
+
+                                <!-- ══ ALIŞKANLIKLAR ══ (tekrarlayan görev zincirleri: seri + son 28 gün şeridi) -->
+                                <Grid Grid.Row="1" Margin="0,14,0,0">
+                                    <Grid.Visibility>
+                                        <Binding Path="IsHabitsView">
+                                            <Binding.Converter>
+                                                <BooleanToVisibilityConverter />
+                                            </Binding.Converter>
+                                        </Binding>
+                                    </Grid.Visibility>
+                                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                                                  Focusable="False" RenderOptions.EdgeMode="Aliased">
+                                        <ItemsControl Focusable="False" ItemsSource="{Binding Habits}" RenderOptions.EdgeMode="Unspecified" Margin="0,0,10,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate DataType="{x:Type models:HabitRow}">
+                                                    <Grid Margin="0,0,0,14">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto" />
+                                                            <RowDefinition Height="Auto" />
+                                                        </Grid.RowDefinitions>
+                                                        <StackPanel>
+                                                            <TextBlock FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource CyanBrush}"
+                                                                       TextTrimming="CharacterEllipsis" Text="{Binding Title}" />
+                                                            <TextBlock Margin="0,2,0,0" FontSize="11" Foreground="{DynamicResource AxisTextBrush}" TextTrimming="CharacterEllipsis">
+                                                                <Run Text="↻ " /><Run Text="{Binding RecurrenceText, Mode=OneWay}" /><Run Text="  ·  " /><Run Text="{Binding BestText, Mode=OneWay}" /><Run Text="  ·  " /><Run Text="{loc:Tr Habit_Rate}" /><Run Text=" " /><Run Text="{Binding RateText, Mode=OneWay}" />
+                                                            </TextBlock>
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                                            <TextBlock x:Name="StreakValue" HorizontalAlignment="Right" FontSize="22" FontWeight="Bold"
+                                                                       Foreground="{StaticResource GreyBrush}" Text="{Binding StreakText}" />
+                                                            <TextBlock HorizontalAlignment="Right" FontSize="10" Foreground="{StaticResource SubtleTextBrush}" Text="{loc:Tr Habit_Streak}" />
+                                                        </StackPanel>
+                                                        <!-- Son 28 gün: yapıldı / kaçırıldı / bugün bekliyor / planlı değil -->
+                                                        <ItemsControl Grid.Row="1" Grid.ColumnSpan="2" Margin="0,6,0,0" Focusable="False" ItemsSource="{Binding Cells}">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate>
+                                                                    <UniformGrid Rows="1" />
+                                                                </ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate DataType="{x:Type models:HabitCell}">
+                                                                    <Border x:Name="Cell" Height="12" Margin="1,0" Background="{StaticResource PanelAltBrush}"
+                                                                            BorderBrush="{StaticResource GreyBrush}" BorderThickness="0" ToolTip="{Binding Tip}" />
+                                                                    <DataTemplate.Triggers>
+                                                                        <DataTrigger Binding="{Binding State}" Value="Done">
+                                                                            <Setter TargetName="Cell" Property="Background" Value="{DynamicResource CyanBrush}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding State}" Value="Missed">
+                                                                            <Setter TargetName="Cell" Property="Background" Value="{StaticResource RedDimBrush}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding State}" Value="Pending">
+                                                                            <Setter TargetName="Cell" Property="BorderBrush" Value="{DynamicResource YellowBrush}" />
+                                                                            <Setter TargetName="Cell" Property="BorderThickness" Value="1.5" />
+                                                                        </DataTrigger>
+                                                                    </DataTemplate.Triggers>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </Grid>
+                                                    <DataTemplate.Triggers>
+                                                        <DataTrigger Binding="{Binding IsHot}" Value="True">
+                                                            <Setter TargetName="StreakValue" Property="Foreground" Value="{DynamicResource YellowBrush}" />
+                                                        </DataTrigger>
+                                                    </DataTemplate.Triggers>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                    <TextBlock Margin="0,10,0,0" FontSize="13" Foreground="{StaticResource GreyBrush}" TextWrapping="Wrap" Text="{loc:Tr Habits_Empty}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasHabits}" Value="False">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                 </Grid>
 
                                 <!-- ══ TAKVİM ══ -->
@@ -2152,6 +2310,12 @@
 
                                 <TextBlock Style="{StaticResource FieldLabel}" Text="{loc:Tr Settings_Focus}" />
                                 <ListBox Style="{StaticResource ChipList}" ItemsSource="{Binding FocusLengthOptions}" SelectedItem="{Binding SelectedFocusLengthOption}" />
+
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="{loc:Tr Settings_Breaks}" />
+                                <ListBox Style="{StaticResource ChipList}" ItemsSource="{Binding SoundOptions}" SelectedItem="{Binding SelectedBreaksOption}" />
+
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="{loc:Tr Settings_AutoNext}" />
+                                <ListBox Style="{StaticResource ChipList}" ItemsSource="{Binding SoundOptions}" SelectedItem="{Binding SelectedAutoNextOption}" />
                             </StackPanel>
 
                             <!-- Sağ: sistem -->

@@ -116,6 +116,8 @@ public sealed partial class MainViewModel : ObservableObject
         _selectedTrayOption = OptionSets.OnOff[0];
         _selectedAutoUpdateOption = OptionSets.OnOff[0];
         _selectedStartupOption = OptionSets.OnOff[1];
+        _selectedBreaksOption = OptionSets.OnOff[0];
+        _selectedAutoNextOption = OptionSets.OnOff[1];
         _calendarMonth = new DateOnly(DateTime.Today.Year, DateTime.Today.Month, 1);
 
         WeekdayHeaders = [];
@@ -136,6 +138,11 @@ public sealed partial class MainViewModel : ObservableObject
             CustomSort = new TaskComparer(SortMode.Created),
         };
         CompletedView = new ListCollectionView(CompletedTasks) { Filter = MatchesFilter };
+        MiniTasks = new ListCollectionView(ActiveTasks)
+        {
+            Filter = static item => item is CyberTask { DueState: DueState.Today or DueState.Overdue },
+            CustomSort = new TaskComparer(SortMode.DueDate),
+        };
 
         CategoryFilters.Add(s_allCategories);
         _selectedCategoryFilter = s_allCategories;
@@ -203,6 +210,39 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private LocalizedOption<bool> _selectedStartupOption;
 
+    [ObservableProperty]
+    private LocalizedOption<bool> _selectedBreaksOption;
+
+    [ObservableProperty]
+    private LocalizedOption<bool> _selectedAutoNextOption;
+
+    partial void OnSelectedBreaksOptionChanged(LocalizedOption<bool> value)
+    {
+        if (value is null)
+        {
+            return;
+        }
+
+        _settings.BreaksEnabled = value.Value;
+        if (!value.Value)
+        {
+            CancelBreak();
+        }
+
+        SaveSettingsIfReady();
+    }
+
+    partial void OnSelectedAutoNextOptionChanged(LocalizedOption<bool> value)
+    {
+        if (value is null)
+        {
+            return;
+        }
+
+        _settings.AutoStartNextFocus = value.Value;
+        SaveSettingsIfReady();
+    }
+
     public IReadOnlyList<LocalizedOption<ThemeId>> ThemeOptions => OptionSets.Themes;
 
     // ───────── Şablonlar ─────────
@@ -235,8 +275,167 @@ public sealed partial class MainViewModel : ObservableObject
     private string _calendarTitle = string.Empty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsChartView), nameof(IsStatsView), nameof(IsCalendarView), nameof(IsFocusView))]
+    [NotifyPropertyChangedFor(nameof(IsChartView), nameof(IsStatsView), nameof(IsCalendarView), nameof(IsFocusView), nameof(IsHabitsView))]
     private ChartMode _chartMode = ChartMode.Last30;
+
+    public bool IsHabitsView => ChartMode == ChartMode.Habits;
+
+    // ───────── Alışkanlıklar ─────────
+
+    public ObservableCollection<HabitRow> Habits { get; } = [];
+
+    public bool HasHabits => Habits.Count > 0;
+
+    [RelayCommand]
+    private void ShowHabits() => ChartMode = ChartMode.Habits;
+
+    private void RefreshHabits()
+    {
+        var rows = InsightsBuilder.BuildHabits(ActiveTasks, CompletedTasks, Today, _loc, t => FormatRecurrence(t.Recurrence, t.RepeatDays));
+        Habits.Clear();
+        foreach (var row in rows)
+        {
+            Habits.Add(row);
+        }
+
+        OnPropertyChanged(nameof(HasHabits));
+    }
+
+    // ───────── Klavyeyle liste yönetimi ─────────
+
+    /// <summary>Ok tuşlarıyla seçilen aktif görev (görünür listede).</summary>
+    [ObservableProperty]
+    private CyberTask? _selectedTask;
+
+    partial void OnSelectedTaskChanged(CyberTask? oldValue, CyberTask? newValue)
+    {
+        if (oldValue is not null)
+        {
+            oldValue.IsSelected = false;
+        }
+
+        if (newValue is not null)
+        {
+            newValue.IsSelected = true;
+        }
+    }
+
+    private List<CyberTask> VisibleActiveTasks() => [.. ActiveView.Cast<CyberTask>()];
+
+    /// <summary>↑/↓: seçimi görünür sırada kaydırır. Seçim yoksa ilk (↓) ya da son (↑) satır seçilir.</summary>
+    public void MoveSelection(int delta)
+    {
+        var visible = VisibleActiveTasks();
+        if (visible.Count == 0)
+        {
+            SelectedTask = null;
+            return;
+        }
+
+        int index = SelectedTask is null ? -1 : visible.IndexOf(SelectedTask);
+        int next = index < 0 ? (delta >= 0 ? 0 : visible.Count - 1) : Math.Clamp(index + delta, 0, visible.Count - 1);
+        SelectedTask = visible[next];
+    }
+
+    /// <summary>Home / End.</summary>
+    public void SelectEdge(bool last)
+    {
+        var visible = VisibleActiveTasks();
+        SelectedTask = visible.Count == 0 ? null : (last ? visible[^1] : visible[0]);
+    }
+
+    /// <summary>Space: seçili görevi tamamlar; seçim aynı sıradaki (bir sonraki) satıra geçer.</summary>
+    public async Task CompleteSelectedAsync()
+    {
+        if (SelectedTask is not { } task)
+        {
+            return;
+        }
+
+        int index = VisibleActiveTasks().IndexOf(task);
+        await CompleteTaskCommand.ExecuteAsync(task);
+        if (task.IsCompleted)
+        {
+            SelectNearIndex(index);
+        }
+    }
+
+    /// <summary>Delete: seçili görevi siler (GERİ AL ile geri gelir); seçim komşu satıra geçer.</summary>
+    public async Task DeleteSelectedAsync()
+    {
+        if (SelectedTask is not { } task)
+        {
+            return;
+        }
+
+        int index = VisibleActiveTasks().IndexOf(task);
+        await DeleteTaskCommand.ExecuteAsync(task);
+        SelectNearIndex(index);
+    }
+
+    public void EditSelected()
+    {
+        if (SelectedTask is { } task)
+        {
+            EditTaskCommand.Execute(task);
+        }
+    }
+
+    public Task ToggleFocusSelectedAsync() =>
+        SelectedTask is { } task ? StartFocusCommand.ExecuteAsync(task) : Task.CompletedTask;
+
+    private void SelectNearIndex(int index)
+    {
+        var visible = VisibleActiveTasks();
+        SelectedTask = visible.Count == 0 ? null : visible[Math.Clamp(index, 0, visible.Count - 1)];
+    }
+
+    // ───────── Mini mod ─────────
+
+    /// <summary>Mini pencerede: bugün ve gecikmiş görevler, son tarihe göre.</summary>
+    public ListCollectionView MiniTasks { get; }
+
+    public bool HasMiniTasks => !MiniTasks.IsEmpty;
+
+    /// <summary>View bu değişince ana pencere ile mini pencere arasında geçiş yapar.</summary>
+    [ObservableProperty]
+    private bool _isMiniMode;
+
+    partial void OnIsMiniModeChanged(bool value)
+    {
+        if (value)
+        {
+            MiniTasks.Refresh(); // kapalıyken yenilenmiyordu
+            OnPropertyChanged(nameof(HasMiniTasks));
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleMiniMode()
+    {
+        Editor = null;
+        IsSettingsOpen = false;
+        IsTemplatesOpen = false;
+        IsDataOpen = false;
+        IsMiniMode = !IsMiniMode;
+    }
+
+    public double? MiniLeft => _settings.MiniLeft;
+
+    public double? MiniTop => _settings.MiniTop;
+
+    /// <summary>Mini pencere taşındı/kapandı: konum hatırlanır.</summary>
+    public void SaveMiniPosition(double left, double top)
+    {
+        if (!double.IsFinite(left) || !double.IsFinite(top))
+        {
+            return;
+        }
+
+        _settings.MiniLeft = Math.Round(left);
+        _settings.MiniTop = Math.Round(top);
+        SaveSettingsIfReady();
+    }
 
     public bool IsChartView => ChartMode is ChartMode.Last30 or ChartMode.Last7;
 
@@ -916,11 +1115,8 @@ public sealed partial class MainViewModel : ObservableObject
             }
         }
 
-        _focusStartedAt = now;
-        _focusDuration = TimeSpan.FromMinutes(_settings.FocusMinutes);
-        task.IsFocused = true;
-        FocusTask = task;
-        UpdateFocusDisplay(now);
+        CancelBreak(); // molada elle odak başlatıldı
+        BeginFocus(task, now);
 
         if (credited)
         {
@@ -1000,6 +1196,106 @@ public sealed partial class MainViewModel : ObservableObject
         });
 
         RebuildChart();
+    }
+
+    private void BeginFocus(CyberTask task, DateTime now)
+    {
+        _focusStartedAt = now;
+        _focusDuration = TimeSpan.FromMinutes(_settings.FocusMinutes);
+        task.IsFocused = true;
+        FocusTask = task;
+        UpdateFocusDisplay(now);
+    }
+
+    // ───────── Mola ─────────
+
+    public const int ShortBreakMinutes = 5;
+    public const int LongBreakMinutes = 15;
+    public const int FocusesPerLongBreak = 4;
+
+    private DateTime _breakStartedAt;
+    private DateTime _breakEndsAt;
+    private CyberTask? _breakTask;
+    private int _completedFocusCount;
+
+    [ObservableProperty]
+    private bool _isOnBreak;
+
+    [ObservableProperty]
+    private bool _isLongBreak;
+
+    [ObservableProperty]
+    private string _breakRemainingText = string.Empty;
+
+    [ObservableProperty]
+    private double _breakProgress;
+
+    /// <summary>Odak bitti: kısa mola; her <see cref="FocusesPerLongBreak"/>. odaktan sonra uzun mola.</summary>
+    private void StartBreak(CyberTask task, DateTime now)
+    {
+        IsLongBreak = _completedFocusCount > 0 && _completedFocusCount % FocusesPerLongBreak == 0;
+        _breakTask = task;
+        _breakStartedAt = now;
+        _breakEndsAt = now.AddMinutes(IsLongBreak ? LongBreakMinutes : ShortBreakMinutes);
+        IsOnBreak = true;
+        UpdateBreakDisplay(now);
+    }
+
+    /// <summary>Mola bitti (süre doldu ya da atlandı). Ayar açıksa ve görev hâlâ aktifse aynı görevde odak başlar.</summary>
+    private void EndBreak(DateTime now, bool notify)
+    {
+        var task = _breakTask;
+        CancelBreak();
+
+        bool resume = _settings.AutoStartNextFocus && task is not null && !task.IsCompleted && ActiveTasks.Contains(task) && FocusTask is null;
+        if (notify)
+        {
+            string message = resume ? _loc.Format("Toast_BreakOverResume", $"{task!.Code} {task.Title}") : _loc["Toast_BreakOver"];
+            ShowToast(message, ToastKind.Reminder, lifetime: resume ? s_infoLifetime : null);
+            AttentionRequested?.Invoke(this, message);
+        }
+
+        if (resume)
+        {
+            BeginFocus(task!, now);
+        }
+    }
+
+    private void CancelBreak()
+    {
+        if (!IsOnBreak)
+        {
+            return;
+        }
+
+        IsOnBreak = false;
+        IsLongBreak = false;
+        _breakTask = null;
+        BreakRemainingText = string.Empty;
+        BreakProgress = 0;
+    }
+
+    /// <summary>Molayı atla: hemen biter (otomatik devam ayarı açıksa odak başlar).</summary>
+    [RelayCommand]
+    private void SkipBreak()
+    {
+        if (IsOnBreak)
+        {
+            EndBreak(DateTime.Now, notify: false);
+        }
+    }
+
+    private void UpdateBreakDisplay(DateTime now)
+    {
+        var total = _breakEndsAt - _breakStartedAt;
+        var remaining = _breakEndsAt - now;
+        if (remaining < TimeSpan.Zero)
+        {
+            remaining = TimeSpan.Zero;
+        }
+
+        BreakRemainingText = $"{(int)remaining.TotalMinutes:00}:{remaining.Seconds:00}";
+        BreakProgress = total.TotalSeconds <= 0 ? 1 : Math.Clamp(1 - remaining.TotalSeconds / total.TotalSeconds, 0, 1);
     }
 
     private void UpdateFocusDisplay(DateTime now)
@@ -1210,6 +1506,8 @@ public sealed partial class MainViewModel : ObservableObject
             FocusProgress = 0;
         }
 
+        CancelBreak();
+        SelectedTask = null;
         Editor = null;
         ClearUndo();
 
@@ -1622,6 +1920,17 @@ public sealed partial class MainViewModel : ObservableObject
         await toast.Action();
     }
 
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task RunToastSecondaryActionAsync(ToastItem? toast)
+    {
+        if (toast is null || !Toasts.Remove(toast) || toast.SecondaryAction is null)
+        {
+            return;
+        }
+
+        await toast.SecondaryAction();
+    }
+
     // ───────── Geri alma ─────────
 
     public bool CanUndo => _undoStack.Count > 0;
@@ -1711,6 +2020,10 @@ public sealed partial class MainViewModel : ObservableObject
         else if (SearchText.Length > 0)
         {
             SearchText = string.Empty;
+        }
+        else
+        {
+            SelectedTask = null;
         }
     }
 
@@ -1997,10 +2310,11 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(UndoHint));
     }
 
-    private void OnClockTick(object? sender, EventArgs e)
-    {
-        var now = DateTime.Now;
+    private void OnClockTick(object? sender, EventArgs e) => Tick(DateTime.Now);
 
+    /// <summary>Saniyelik saat işi. Testler zamanı ileri sarmak için doğrudan çağırır.</summary>
+    internal void Tick(DateTime now)
+    {
         for (int i = Toasts.Count - 1; i >= 0; i--)
         {
             if (Toasts[i].ExpiresAt is { } expires && now >= expires)
@@ -2015,14 +2329,31 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 int minutes = (int)Math.Round(_focusDuration.TotalMinutes);
                 StopFocusCore(now);
+                _completedFocusCount++;
                 string message = _loc.Format("Toast_FocusDone", $"{focused.Code} {focused.Title}", FormatMinutes(minutes));
                 ShowToast(message, ToastKind.Reminder);
                 AttentionRequested?.Invoke(this, message);
                 _ = SaveAsync();
+
+                if (_settings.BreaksEnabled)
+                {
+                    StartBreak(focused, now);
+                }
             }
             else
             {
                 UpdateFocusDisplay(now);
+            }
+        }
+        else if (IsOnBreak)
+        {
+            if (now >= _breakEndsAt)
+            {
+                EndBreak(now, notify: true);
+            }
+            else
+            {
+                UpdateBreakDisplay(now);
             }
         }
 
@@ -2100,6 +2431,8 @@ public sealed partial class MainViewModel : ObservableObject
         CurrentTheme = ThemePalette.Get(_settings.Theme);
         SelectedTrayOption = OptionSets.Find(OptionSets.OnOff, _settings.MinimizeToTray);
         SelectedAutoUpdateOption = OptionSets.Find(OptionSets.OnOff, _settings.AutoCheckUpdates);
+        SelectedBreaksOption = OptionSets.Find(OptionSets.OnOff, _settings.BreaksEnabled);
+        SelectedAutoNextOption = OptionSets.Find(OptionSets.OnOff, _settings.AutoStartNextFocus);
         OnPropertyChanged(nameof(MinimizeToTray));
     }
 
@@ -2141,6 +2474,10 @@ public sealed partial class MainViewModel : ObservableObject
         {
             RefreshCalendar();
         }
+        else if (IsHabitsView)
+        {
+            RefreshHabits();
+        }
     }
 
     private void RefreshViews()
@@ -2148,6 +2485,11 @@ public sealed partial class MainViewModel : ObservableObject
         UpdateSmartViewCounts();
         ActiveView.Refresh();
         CompletedView.Refresh();
+        if (IsMiniMode)
+        {
+            MiniTasks.Refresh(); // gizliyken gereksiz liste kurulumu yapılmasın
+            OnPropertyChanged(nameof(HasMiniTasks));
+        }
     }
 
     private void UpdateSmartViewCounts()
@@ -2351,12 +2693,21 @@ public sealed partial class MainViewModel : ObservableObject
         bool changed = false;
         foreach (var task in ActiveTasks)
         {
-            if (task.ReminderFired || task.ReminderMinutesBefore is not { } minutes || task.DueAt is null)
+            if (task.ReminderMinutesBefore is not { } minutes || task.DueAt is null)
             {
                 continue;
             }
 
-            if (now < GetReminderMoment(task, minutes))
+            if (task.SnoozedUntil is { } until)
+            {
+                if (now < until)
+                {
+                    continue;
+                }
+
+                task.SnoozedUntil = null; // ertelenen hatırlatma zamanı geldi
+            }
+            else if (task.ReminderFired || now < GetReminderMoment(task, minutes))
             {
                 continue;
             }
@@ -2370,7 +2721,21 @@ public sealed partial class MainViewModel : ObservableObject
                 message += $" ({task.DueText})";
             }
 
-            ShowToast(message, ToastKind.Reminder); // kullanıcı kapatana kadar kalır
+            // Kullanıcı kapatana kadar kalır; 10 dk / 1 sa erteleme düğmeleri.
+            Toasts.Add(new ToastItem
+            {
+                Message = message,
+                Kind = ToastKind.Reminder,
+                ActionLabel = _loc["Snooze_10"],
+                Action = () => SnoozeAsync(task, 10),
+                SecondaryActionLabel = _loc["Snooze_60"],
+                SecondaryAction = () => SnoozeAsync(task, 60),
+            });
+            while (Toasts.Count > MaxToasts)
+            {
+                Toasts.RemoveAt(0);
+            }
+
             AttentionRequested?.Invoke(this, message);
         }
 
@@ -2378,6 +2743,20 @@ public sealed partial class MainViewModel : ObservableObject
         {
             _ = SaveAsync();
         }
+    }
+
+    /// <summary>Hatırlatmayı <paramref name="minutes"/> dakika sonra yeniden gösterir (görev hâlâ aktifse).</summary>
+    private async Task SnoozeAsync(CyberTask task, int minutes)
+    {
+        if (!ActiveTasks.Contains(task) || task.ReminderMinutesBefore is null)
+        {
+            return;
+        }
+
+        var until = DateTime.Now.AddMinutes(minutes);
+        task.SnoozedUntil = until;
+        ShowToast(_loc.Format("Toast_Snoozed", task.Code, until.ToString("HH:mm", CultureInfo.InvariantCulture)), ToastKind.Info, lifetime: s_infoLifetime);
+        await SaveAsync();
     }
 
     private CyberTask CreateNextOccurrence(CyberTask source, DateTime now)
@@ -2393,8 +2772,10 @@ public sealed partial class MainViewModel : ObservableObject
             probe.DueAt = next;
         }
 
+        source.SeriesId ??= source.Id; // zincirin ilk halkası: kimlik kendi Id'si
         return new CyberTask
         {
+            SeriesId = source.SeriesId,
             Number = _nextTaskNumber++,
             Title = source.Title,
             Category = source.Category,
@@ -2571,6 +2952,10 @@ public sealed partial class MainViewModel : ObservableObject
         else if (IsFocusView)
         {
             RefreshFocusStats();
+        }
+        else if (IsHabitsView)
+        {
+            RefreshHabits();
         }
     }
 

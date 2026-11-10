@@ -458,8 +458,8 @@ var thread = new Thread(() =>
             Check(u.FocusTiles[0].Value == Localizer.Instance.Format("Fmt_Minutes", 10) && u.FocusTiles[1].Value == "1", "focus: total and session tiles");
             u.FlushNow();
             var reloaded = await StorageService.ReadFileAsync(Path.Combine(dir, "undo.json"));
-            Check(reloaded.SchemaVersion == 4 && reloaded.FocusSessions.Count == 1 && reloaded.FocusSessions[0].Category == "study"
-                && reloaded.FocusSessions[0].Minutes == 10, "focus: session persisted (schema v4)");
+            Check(reloaded.SchemaVersion == CyberData.CurrentSchemaVersion && reloaded.FocusSessions.Count == 1 && reloaded.FocusSessions[0].Category == "study"
+                && reloaded.FocusSessions[0].Minutes == 10, "focus: session persisted");
 
             var fToday = DateOnly.FromDateTime(DateTime.Today);
             var sessions = new List<FocusSession>
@@ -661,6 +661,194 @@ var thread = new Thread(() =>
             await notInstalled.InitializeAsync();
             await notInstalled.CheckUpdatesCommand.ExecuteAsync(null);
             Check(notInstalled.HasUpdate && !notInstalled.CanInstallUpdate, "update: dev build only offers the release page");
+
+            // ══════════════ Hatırlatma erteleme ══════════════
+            var sn = new MainViewModel(new StorageService(Path.Combine(dir, "snooze.json")));
+            await sn.InitializeAsync();
+            sn.NewTaskTitle = "Call mom";
+            await sn.AddTaskCommand.ExecuteAsync(null);
+            var st = sn.ActiveTasks.Single();
+            var snDue = DateTime.Now.AddMinutes(30);
+            st.DueAt = snDue;
+            st.HasDueTime = true;
+            st.ReminderMinutesBefore = 0;
+            sn.Tick(snDue.AddSeconds(1));
+            var rt = sn.Toasts.Single(t => t.Kind == ToastKind.Reminder);
+            Check(st.ReminderFired && rt.HasAction && rt.HasSecondaryAction, "snooze: reminder toast offers 10 min and 1 h");
+            await sn.RunToastSecondaryActionCommand.ExecuteAsync(rt);
+            Check(st.SnoozedUntil is { } snUntil && Math.Abs((snUntil - DateTime.Now.AddMinutes(60)).TotalSeconds) < 5 && !sn.Toasts.Contains(rt),
+                "snooze: 1 h snooze sets time and closes the toast");
+            sn.Tick(DateTime.Now.AddMinutes(30));
+            Check(!sn.Toasts.Any(t => t.Kind == ToastKind.Reminder), "snooze: no reminder before snooze time");
+            sn.Tick(DateTime.Now.AddMinutes(61));
+            var rt2 = sn.Toasts.SingleOrDefault(t => t.Kind == ToastKind.Reminder);
+            Check(rt2 is not null && st.SnoozedUntil is null, "snooze: reminder shown again when snooze ends");
+            await sn.RunToastActionCommand.ExecuteAsync(rt2);
+            Check(st.SnoozedUntil is { } snUntil2 && Math.Abs((snUntil2 - DateTime.Now.AddMinutes(10)).TotalSeconds) < 5, "snooze: 10 min snooze");
+            await sn.CompleteTaskCommand.ExecuteAsync(st);
+            sn.Tick(DateTime.Now.AddMinutes(11));
+            Check(!sn.Toasts.Any(t => t.Kind == ToastKind.Reminder), "snooze: completed task does not remind again");
+            sn.FlushNow();
+            Check(File.ReadAllText(Path.Combine(dir, "snooze.json")).Contains("\"snoozedUntil\""), "snooze: snooze time persisted");
+
+            // ══════════════ Mola zamanlayıcısı ══════════════
+            var br = new MainViewModel(new StorageService(Path.Combine(dir, "breaks.json")));
+            await br.InitializeAsync();
+            br.NewTaskTitle = "Deep work";
+            await br.AddTaskCommand.ExecuteAsync(null);
+            var bt = br.ActiveTasks.Single();
+            await br.StartFocusCommand.ExecuteAsync(bt);
+            var t1 = DateTime.Now.AddMinutes(25).AddSeconds(5);
+            br.Tick(t1);
+            Check(!br.IsFocusRunning && br.IsOnBreak && !br.IsLongBreak && br.BreakRemainingText == "05:00" && bt.TrackedMinutes == 25,
+                "breaks: 5 min break after focus: " + br.BreakRemainingText);
+            br.Tick(t1.AddMinutes(5).AddSeconds(1));
+            Check(!br.IsOnBreak && !br.IsFocusRunning && br.Toasts.Any(t => t.Message.StartsWith("☕")), "breaks: break ends with notice, no auto-start by default");
+
+            br.SelectedAutoNextOption = br.SoundOptions.First(o => o.Value);
+            await br.StartFocusCommand.ExecuteAsync(bt);
+            var t2 = DateTime.Now.AddMinutes(25).AddSeconds(5);
+            br.Tick(t2);                                     // 2. odak bitti → kısa mola
+            var t3 = t2.AddMinutes(5).AddSeconds(1);
+            br.Tick(t3);                                     // mola bitti → odak otomatik
+            Check(br.IsFocusRunning && br.FocusTask == bt && !br.IsOnBreak, "breaks: auto-start next focus on the same task");
+            var t4 = t3.AddMinutes(25).AddSeconds(5);
+            br.Tick(t4);                                     // 3. odak
+            Check(br.IsOnBreak && !br.IsLongBreak, "breaks: 3rd focus -> short break");
+            br.SkipBreakCommand.Execute(null);
+            Check(!br.IsOnBreak && br.IsFocusRunning, "breaks: skip ends break (and auto-starts focus)");
+            br.Tick(DateTime.Now.AddMinutes(25).AddSeconds(5)); // 4. odak
+            Check(br.IsOnBreak && br.IsLongBreak && br.BreakRemainingText == "15:00", "breaks: every 4th focus -> 15 min long break: " + br.BreakRemainingText);
+            await br.StartFocusCommand.ExecuteAsync(bt);
+            Check(!br.IsOnBreak && br.IsFocusRunning, "breaks: starting focus manually cancels the break");
+            br.SelectedBreaksOption = br.SoundOptions.First(o => !o.Value);
+            br.Tick(DateTime.Now.AddMinutes(25).AddSeconds(5));
+            Check(!br.IsOnBreak && !br.IsFocusRunning, "breaks: disabled -> no break after focus");
+
+            // ══════════════ Alışkanlıklar ══════════════
+            var hToday = DateOnly.FromDateTime(DateTime.Today);
+            var hSeries = Guid.NewGuid();
+            CyberTask Done(int daysAgo) => new()
+            {
+                Title = "Run", Recurrence = Recurrence.Daily, SeriesId = hSeries, IsCompleted = true,
+                DueAt = DateTime.Today.AddDays(-daysAgo), CompletedAt = DateTime.Today.AddDays(-daysAgo).AddHours(20),
+                CreatedAt = DateTime.Today.AddDays(-12),
+            };
+            var hDone = new[] { 1, 2, 3, 5, 10, 11, 12 }.Select(Done).ToList();
+            var hActive = new CyberTask { Number = 5, Title = "Run", Recurrence = Recurrence.Daily, SeriesId = hSeries, DueAt = DateTime.Today, CreatedAt = DateTime.Now };
+            var hRow = InsightsBuilder.BuildHabits([hActive], hDone, hToday, Localizer.Instance, _ => "DAILY").Single();
+            Check(hRow.Streak == 3 && hRow.BestText.Contains('3'), "habits: streak 3 (today pending does not break it), best 3: " + hRow.StreakText + " " + hRow.BestText);
+            Check(hRow.Cells.Count == 28 && hRow.Cells[^1].State == HabitCellState.Pending && hRow.Cells[^5].State == HabitCellState.Missed
+                && hRow.Cells[^2].State == HabitCellState.Done && hRow.Cells[^14].State == HabitCellState.Off, "habits: 28-day strip states");
+            Check(hRow.RateText.Contains("58"), "habits: 30-day rate 7/12: " + hRow.RateText);
+
+            var wed = new DateOnly(2026, 11, 11); // çarşamba
+            var mwfSeries = Guid.NewGuid();
+            CyberTask Mwf(DateOnly d) => new()
+            {
+                Title = "Gym", Recurrence = Recurrence.SelectedDays, RepeatDays = WeekDays.Monday | WeekDays.Wednesday | WeekDays.Friday,
+                SeriesId = mwfSeries, IsCompleted = true, DueAt = d.ToDateTime(TimeOnly.MinValue), CompletedAt = d.ToDateTime(new TimeOnly(19, 0)),
+                CreatedAt = new DateTime(2026, 11, 4),
+            };
+            var mwfActive = new CyberTask
+            {
+                Title = "Gym", Recurrence = Recurrence.SelectedDays, RepeatDays = WeekDays.Monday | WeekDays.Wednesday | WeekDays.Friday,
+                SeriesId = mwfSeries, DueAt = wed.ToDateTime(TimeOnly.MinValue), CreatedAt = new DateTime(2026, 11, 9),
+            };
+            var mwfRow = InsightsBuilder.BuildHabits([mwfActive], [Mwf(new(2026, 11, 4)), Mwf(new(2026, 11, 6)), Mwf(new(2026, 11, 9))], wed, Localizer.Instance, _ => "MWF").Single();
+            Check(mwfRow.Streak == 3 && mwfRow.Cells[^2].State == HabitCellState.Off && mwfRow.Cells[^3].State == HabitCellState.Done,
+                "habits: selected days skip unscheduled days");
+
+            var legacy = new CyberData { SchemaVersion = 4 };
+            for (int i = 0; i < 3; i++)
+            {
+                legacy.Tasks.Add(new CyberTask { Title = "Spor", Category = "sağlık", Recurrence = Recurrence.Daily, IsCompleted = true, CompletedAt = DateTime.Now, CreatedAt = DateTime.Today.AddDays(-5 + i) });
+            }
+
+            legacy.Tasks.Add(new CyberTask { Title = "spor ", Category = "Sağlık", Recurrence = Recurrence.Daily, CreatedAt = DateTime.Today });
+            legacy.Tasks.Add(new CyberTask { Title = "Rapor", Recurrence = Recurrence.Weekly, CreatedAt = DateTime.Today });
+            legacy.Tasks.Add(new CyberTask { Title = "Once" });
+            string legacyPath = Path.Combine(dir, "legacy-v4.json");
+            await StorageService.WriteAtomicAsync(legacyPath, StorageService.Serialize(legacy));
+            var migrated = await StorageService.ReadFileAsync(legacyPath);
+            var sporCopies = migrated.Tasks.Where(t => t.Title.Trim().Equals("spor", StringComparison.OrdinalIgnoreCase)).ToList();
+            Check(migrated.SchemaVersion == 5 && sporCopies.Count == 4 && sporCopies.All(t => t.SeriesId == legacy.Tasks[0].Id)
+                && migrated.Tasks.Single(t => t.Title == "Rapor").SeriesId is { } rs && rs != legacy.Tasks[0].Id
+                && migrated.Tasks.Single(t => t.Title == "Once").SeriesId is null, "habits: v4 -> v5 links old recurring copies into series");
+
+            var hv = new MainViewModel(new StorageService(Path.Combine(dir, "habits.json")));
+            await hv.InitializeAsync();
+            hv.NewTaskTitle = "Stretch *daily @today";
+            await hv.AddTaskCommand.ExecuteAsync(null);
+            var hFirst = hv.ActiveTasks.Single();
+            await hv.CompleteTaskCommand.ExecuteAsync(hFirst);
+            var hNext = hv.ActiveTasks.Single();
+            Check(hFirst.SeriesId == hFirst.Id && hNext.SeriesId == hFirst.Id, "habits: completing links the next copy to the series");
+            hv.ShowHabitsCommand.Execute(null);
+            Check(hv.IsHabitsView && hv.Habits.Count == 1 && hv.Habits[0].Streak == 1 && hv.Habits[0].Cells[^1].State == HabitCellState.Done,
+                "habits: tab shows the habit with today's completion");
+
+            // ══════════════ Klavyeyle liste ══════════════
+            var kb = new MainViewModel(new StorageService(Path.Combine(dir, "keys.json")));
+            await kb.InitializeAsync();
+            foreach (string title in new[] { "K1", "K2", "K3" })
+            {
+                kb.NewTaskTitle = title;
+                await kb.AddTaskCommand.ExecuteAsync(null);
+            }
+
+            CyberTask K(string title) => kb.ActiveTasks.Single(t => t.Title == title);
+            kb.MoveSelection(1);
+            Check(kb.SelectedTask == K("K1") && K("K1").IsSelected, "keys: ↓ with no selection selects first");
+            kb.MoveSelection(1);
+            kb.MoveSelection(1);
+            kb.MoveSelection(1);
+            Check(kb.SelectedTask == K("K3") && !K("K1").IsSelected, "keys: ↓ stops at the last row");
+            kb.MoveSelection(-1);
+            Check(kb.SelectedTask == K("K2"), "keys: ↑ moves up");
+            kb.SelectEdge(last: true);
+            var k3 = kb.SelectedTask!;
+            await kb.CompleteSelectedAsync();
+            Check(k3.IsCompleted && kb.SelectedTask == K("K2"), "keys: Space completes, selection stays in place");
+            kb.SelectEdge(last: false);
+            var k1 = kb.SelectedTask!;
+            await kb.DeleteSelectedAsync();
+            Check(!kb.ActiveTasks.Contains(k1) && kb.SelectedTask == K("K2"), "keys: Del deletes, next row selected");
+            kb.EditSelected();
+            Check(kb.Editor?.Target == K("K2"), "keys: Enter opens editor");
+            kb.CancelEditCommand.Execute(null);
+            await kb.ToggleFocusSelectedAsync();
+            Check(kb.FocusTask == K("K2"), "keys: F starts focus");
+            await kb.ToggleFocusSelectedAsync();
+            Check(kb.FocusTask is null, "keys: F again stops focus");
+            var k2 = K("K2");
+            kb.EscapeCommand.Execute(null);
+            Check(kb.SelectedTask is null && !k2.IsSelected, "keys: Esc clears selection");
+
+            // ══════════════ Mini mod ══════════════
+            var mn = new MainViewModel(new StorageService(Path.Combine(dir, "mini.json")));
+            await mn.InitializeAsync();
+            mn.NewTaskTitle = "Due today @today @23:59";
+            await mn.AddTaskCommand.ExecuteAsync(null);
+            mn.NewTaskTitle = $"Later @{DateTime.Today.AddDays(3):dd.MM}";
+            await mn.AddTaskCommand.ExecuteAsync(null);
+            mn.NewTaskTitle = "Late";
+            await mn.AddTaskCommand.ExecuteAsync(null);
+            mn.NewTaskTitle = "No date";
+            await mn.AddTaskCommand.ExecuteAsync(null);
+            mn.ActiveTasks.Single(t => t.Title == "Late").DueAt = DateTime.Today.AddDays(-1);
+            mn.RefreshTimeDependentState(DateTime.Now);
+            mn.ToggleMiniModeCommand.Execute(null);
+            var miniTitles = mn.MiniTasks.Cast<CyberTask>().Select(t => t.Title).ToList();
+            Check(mn.IsMiniMode && mn.HasMiniTasks && miniTitles.SequenceEqual(["Late", "Due today"]),
+                "mini: shows overdue + today, by due date: " + string.Join(",", miniTitles));
+            await mn.CompleteTaskCommand.ExecuteAsync(mn.ActiveTasks.Single(t => t.Title == "Late"));
+            Check(mn.MiniTasks.Cast<CyberTask>().Select(t => t.Title).SequenceEqual(["Due today"]), "mini: completed task leaves the mini list");
+            mn.SaveMiniPosition(120.4, 340.6);
+            mn.ToggleMiniModeCommand.Execute(null);
+            mn.FlushNow();
+            var miniSaved = await StorageService.ReadFileAsync(Path.Combine(dir, "mini.json"));
+            Check(!mn.IsMiniMode && miniSaved.Settings.MiniLeft == 120 && miniSaved.Settings.MiniTop == 341, "mini: toggles back, position persisted");
 
             Check(Localizer.MissingKeys().Count == 0, "TR/EN key sets identical after new features: " + string.Join(",", Localizer.MissingKeys()));
 

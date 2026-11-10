@@ -15,6 +15,7 @@ public sealed class TrayIconHost : IDisposable
     private readonly Forms.NotifyIcon _icon;
     private readonly Forms.ContextMenuStrip _menu;
     private readonly Forms.ToolStripMenuItem _showItem;
+    private readonly Forms.ToolStripMenuItem _miniItem;
     private readonly Forms.ToolStripMenuItem _exitItem;
     private readonly Drawing.Icon _trayIcon;
     private bool _disposed;
@@ -30,6 +31,8 @@ public sealed class TrayIconHost : IDisposable
 
         _showItem = new Forms.ToolStripMenuItem();
         _exitItem = new Forms.ToolStripMenuItem();
+        _miniItem = new Forms.ToolStripMenuItem();
+        _miniItem.Click += (_, _) => MiniRequested?.Invoke(this, EventArgs.Empty);
         _showItem.Click += (_, _) => ShowRequested?.Invoke(this, EventArgs.Empty);
         _exitItem.Click += (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty);
 
@@ -41,6 +44,7 @@ public sealed class TrayIconHost : IDisposable
             ShowImageMargin = false,
         };
         _menu.Items.Add(_showItem);
+        _menu.Items.Add(_miniItem);
         _menu.Items.Add(new Forms.ToolStripSeparator());
         _menu.Items.Add(_exitItem);
 
@@ -67,6 +71,8 @@ public sealed class TrayIconHost : IDisposable
     public event EventHandler? ShowRequested;
 
     public event EventHandler? ExitRequested;
+
+    public event EventHandler? MiniRequested;
 
     /// <summary>Windows bildirimi (uygulama gizli/arka plandayken hatırlatmalar için).</summary>
     public void Notify(string message)
@@ -102,6 +108,7 @@ public sealed class TrayIconHost : IDisposable
     {
         var loc = Localizer.Instance;
         _showItem.Text = loc["Tray_Show"];
+        _miniItem.Text = loc["Tray_Mini"];
         _exitItem.Text = loc["Tray_Exit"];
     }
 

@@ -18,10 +18,12 @@ Remove-Item $artifacts -Recurse -Force -ErrorAction SilentlyContinue
 
 # 1) Uygulama: framework-dependent tek exe (~0,6 MB). .NET 10 Desktop Runtime'ı setup kontrol eder/kurar.
 #    (Self-contained 66-72 MB tutuyordu; WPF trimming desteklemediği için küçültülemiyor.)
+#    ReadyToRun: uygulama kodu önceden derlenir (exe ~0,8 → ~1,5 MB); ölçüm: ilk çizim ~65 ms, JIT 2.8k → 2.2k metot.
 $appArgs = @(
     "publish", (Join-Path $root "CyberTodo/CyberTodo.csproj"),
     "-c", "Release", "-r", "win-x64", "--self-contained", "false",
     "-p:PublishSingleFile=true",
+    "-p:PublishReadyToRun=true",
     "-p:DebugType=none",
     "-p:Version=$Version",
     "-o", $appOut

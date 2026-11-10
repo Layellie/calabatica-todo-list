@@ -30,6 +30,15 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        string? benchmarkReport = StartupBenchmark.ParseOutputPath(args);
+        if (benchmarkReport is not null)
+        {
+            StartupBenchmark.RequireIsolatedData();
+            StartupTrace.Enable();
+            StartupBenchmark.EnableJitTraceIfRequested(args);
+        }
+
+        StartupTrace.Mark("main");
         // Arka plan thread'lerinde yakalanmamış hata: süreç zaten sonlanıyor, en azından rapor kalsın.
         AppDomain.CurrentDomain.UnhandledException += static (_, e) =>
         {
@@ -48,14 +57,15 @@ public static class Program
 
         // Tek örnek: tepside çalışırken exe'ye tekrar tıklanırsa ikinci kopya açılmaz (aynı JSON'a iki yazar olurdu),
         // mevcut pencereye "göster" sinyali gider.
-        using var mutex = new Mutex(initiallyOwned: true, MutexName, out bool createdNew);
+        bool createdNew = true;
+        using var mutex = benchmarkReport is null ? new Mutex(initiallyOwned: true, MutexName, out createdNew) : null; // kıyaslama: çalışan gerçek uygulamaya dokunma
         bool afterUpdate = args.Any(static a => string.Equals(a, AfterUpdateArgument, StringComparison.OrdinalIgnoreCase));
         if (!createdNew && afterUpdate)
         {
             // Eski sürüm kayıtlarını bitirip kapanıyor: onun bırakmasını bekle (sinyal gönderip çıkma).
             try
             {
-                createdNew = mutex.WaitOne(s_afterUpdateWait);
+                createdNew = mutex!.WaitOne(s_afterUpdateWait);
             }
             catch (AbandonedMutexException)
             {
@@ -78,13 +88,14 @@ public static class Program
             return;
         }
 
-        using var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
+        using var showEvent = benchmarkReport is null ? new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName) : null;
         UpdateInstaller.CleanupLeftovers(Environment.ProcessPath); // önceki güncellemeden kalan .old/.new
 
         bool startHidden = args.Any(static a => string.Equals(a, RegistryStartupRegistration.TrayArgument, StringComparison.OrdinalIgnoreCase));
         RenderPolicy.Apply(); // ilk pencereden ÖNCE: yazılım render (varsayılan) ~115 MB tasarruf, CALABATICA_RENDER=gpu ile eski davranış
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         Themes.ThemeResources.EnsureLoaded(app);
+        StartupTrace.Mark("app+theme");
         // Composition root: servisler burada kurulur; pencere ve ViewModel bunları dışarıdan alır (testte sahteleri verilir).
         var viewModel = new MainViewModel(
             new StorageService(),
@@ -93,9 +104,21 @@ public static class Program
             new WpfFileDialogs(static () => Application.Current?.Windows.OfType<Window>().FirstOrDefault(static w => w.IsActive)),
             new UpdateInstaller());
         viewModel.BeginPreload(); // dosya okuma/JSON, pencere XAML'i kurulurken arka planda
+        StartupTrace.Mark("viewmodel+preload");
+        // Tepsi (WinForms): gizli başlangıçta hemen, aksi halde ilk çizimden sonra (aşağıda) — kritik yoldan çıkar.
 #pragma warning disable CA2000 // TrayIconHost sahipliği MainWindow'a geçer (OnClosed / ExitApplication / HandleFatalError'da Dispose edilir)
-        var window = new MainWindow(viewModel, new TrayIconHost(), startHidden);
+        var window = new MainWindow(viewModel, startHidden ? new TrayIconHost() : null, startHidden);
 #pragma warning restore CA2000
+        if (!startHidden)
+        {
+            window.ContentRendered += (_, _) =>
+                window.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
+                {
+#pragma warning disable CA2000 // sahiplik AttachTray ile pencereye geçer
+                    window.AttachTray(new TrayIconHost());
+#pragma warning restore CA2000
+                });
+        }
 
         // UI thread'inde yakalanmamış hata: rapor yaz, bekleyen kaydı diske indir, kullanıcıya söyle, düzgün kapan.
         // Bilinmeyen bir hatadan sonra çalışmaya devam etmek veriyi tutarsız bırakabilir; bu yüzden devam edilmez.
@@ -105,20 +128,30 @@ public static class Program
             window.HandleFatalError(e.Exception);
         };
 
-        var registration = ThreadPool.RegisterWaitForSingleObject(
-            showEvent,
-            (_, _) => app.Dispatcher.BeginInvoke(window.ShowFromTray),
-            state: null,
-            Timeout.Infinite,
-            executeOnlyOnce: false);
+        StartupTrace.Mark("window-ctor-done");
+        var registration = showEvent is null
+            ? null
+            : ThreadPool.RegisterWaitForSingleObject(
+                showEvent,
+                (_, _) => app.Dispatcher.BeginInvoke(window.ShowFromTray),
+                state: null,
+                Timeout.Infinite,
+                executeOnlyOnce: false);
+
+        if (benchmarkReport is not null)
+        {
+            StartupBenchmark.MakeInvisibleToUser(window);
+            StartupBenchmark.Attach(app, window, viewModel, benchmarkReport);
+        }
 
         if (!startHidden)
         {
             window.Show();
+            StartupTrace.Mark("window-shown");
         }
 
         app.Run();
-        registration.Unregister(null);
+        registration?.Unregister(null);
     }
 }
 
@@ -127,7 +160,7 @@ public partial class MainWindow : Window
     private static readonly TimeSpan s_shutdownSaveTimeout = TimeSpan.FromSeconds(3);
 
     private readonly MainViewModel _viewModel;
-    private readonly TrayIconHost? _tray; // null: testlerde tepsi simgesi oluşturulmaz
+    private TrayIconHost? _tray; // null: testlerde yok; normal açılışta ilk çizimden SONRA eklenir (AttachTray)
     private bool _closeConfirmed;
     private bool _exitRequested;
     private bool _trayHintShown;
@@ -144,26 +177,14 @@ public partial class MainWindow : Window
     public MainWindow(MainViewModel viewModel, TrayIconHost? tray, bool startHidden = false)
     {
         InitializeComponent();
+        StartupTrace.Mark("window-xaml-done");
 
         _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         DataContext = _viewModel;
 
-        _tray = tray;
-        if (_tray is not null)
+        if (tray is not null)
         {
-            _tray.ShowRequested += (_, _) => ShowFromTray();
-            _tray.ExitRequested += (_, _) => ExitApplication();
-            _tray.MiniRequested += (_, _) =>
-            {
-                if (_viewModel.IsMiniMode)
-                {
-                    ShowMini(); // gizlenmişse geri getir
-                }
-                else
-                {
-                    _viewModel.ToggleMiniModeCommand.Execute(null);
-                }
-            };
+            AttachTray(tray);
         }
 
         _viewModel.AttentionRequested += OnAttentionRequested;
@@ -218,6 +239,44 @@ public partial class MainWindow : Window
     }
 
     private bool _handlingFatalError;
+
+    /// <summary>
+    /// Tepsi simgesini bağlar. Normal açılışta pencere ilk kez çizildikten SONRA çağrılır: WinForms'u (NotifyIcon)
+    /// yüklemek açılışın kritik yolunda yüzlerce ms tutuyordu; gizli başlangıçta (--tray) ise hemen bağlanır.
+    /// </summary>
+    public void AttachTray(TrayIconHost tray)
+    {
+        ArgumentNullException.ThrowIfNull(tray);
+        if (_tray is not null)
+        {
+            tray.Dispose(); // zaten bağlı (çift çağrı)
+            return;
+        }
+
+        _tray = tray;
+        tray.ShowRequested += (_, _) => ShowFromTray();
+        tray.ExitRequested += (_, _) => ExitApplication();
+        tray.MiniRequested += (_, _) =>
+        {
+            if (_viewModel.IsMiniMode)
+            {
+                ShowMini(); // gizlenmişse geri getir
+            }
+            else
+            {
+                _viewModel.ToggleMiniModeCommand.Execute(null);
+            }
+        };
+        StartupTrace.Mark("tray-attached");
+    }
+
+    /// <summary>Kıyaslama modu: kayıt/tepsi hayaletine yol açmadan temiz kapan.</summary>
+    internal void ExitForBenchmark()
+    {
+        _exitRequested = true;
+        _closeConfirmed = true;
+        Close();
+    }
 
     /// <summary>Yakalanmamış UI hatası: rapor + acil kayıt + bilgi kutusu + kapanış. İkinci hata gelirse doğrudan kapanır.</summary>
     [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Çökme sınırı: acil kayıt başarısız olsa bile asıl hata raporu ve kullanıcı bilgilendirmesi engellenmemeli.")]

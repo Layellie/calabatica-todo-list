@@ -35,6 +35,37 @@ internal static class DataAndPlatformTests
         SchemaMigrations.Apply(again);
         Check(again.Tasks[0].CompletionCreditHours == 2.5, "migrations: re-applying on current data is a no-op");
 
+        // ── JSON biçimi: tüm alanlar gidiş-dönüşte korunur (kaynak üretimli JSON denemesi ObservableProperty alanlarını
+        //    sessizce düşürdü; bu test o sınıf hatayı yakalar), eski/elle düzenlenmiş dosyalar okunur ──
+        var sample = new CyberData { NextTaskNumber = 9 };
+        sample.Settings.Language = AppLanguage.English;
+        sample.Settings.Theme = ThemeId.Neon;
+        sample.Settings.MiniLeft = 12.5;
+        sample.Tasks.Add(new CyberTask
+        {
+            Number = 1, Title = "Çalış ğüşiöç İI \"tırnak\" 🙂", Category = "iş", Notes = "satır1\nsatır2", EstimatedHours = 2.5,
+            Priority = TaskPriority.HighPriority, Recurrence = Recurrence.SelectedDays, RepeatDays = WeekDays.Monday | WeekDays.Friday,
+            DueAt = new DateTime(2026, 3, 4, 10, 30, 0), HasDueTime = true, IsCompleted = true, CompletedAt = new DateTime(2026, 3, 5, 8, 0, 0),
+            Subtasks = [new SubTask { Title = "alt", IsDone = true }, new SubTask { Title = "alt2" }],
+        });
+        sample.Tasks.Add(new CyberTask { Number = 2, Title = "boş" });
+        string rtPath = Path.Combine(dir, "roundtrip.json");
+        await File.WriteAllBytesAsync(rtPath, StorageService.Serialize(sample));
+        var rt = await StorageService.ReadFileAsync(rtPath);
+        var t0 = rt.Tasks.Count > 0 ? rt.Tasks[0] : null;
+        Check(rt.Tasks.Count == 2 && t0 is not null && t0.Title == sample.Tasks[0].Title && t0.Category == "iş" && t0.Notes == "satır1\nsatır2"
+            && t0.EstimatedHours == 2.5 && t0.Priority == TaskPriority.HighPriority && t0.Recurrence == Recurrence.SelectedDays
+            && t0.RepeatDays == (WeekDays.Monday | WeekDays.Friday) && t0.DueAt == sample.Tasks[0].DueAt && t0.HasDueTime && t0.IsCompleted
+            && t0.CompletedAt == sample.Tasks[0].CompletedAt && t0.Subtasks.Count == 2 && t0.Subtasks[0].IsDone
+            && rt.Settings.MiniLeft == 12.5 && rt.Settings.Language == AppLanguage.English && rt.NextTaskNumber == 9,
+            "json: every field survives a save/load round trip (enums as names, flags, unicode, nullable)");
+        // Büyük/küçük harf duyarsız + sayı olarak yazılmış enum (eski/elle düzenlenmiş dosyalar)
+        string legacyPath = Path.Combine(dir, "legacy-case.json");
+        await File.WriteAllTextAsync(legacyPath, """{"SchemaVersion":5,"NextTaskNumber":3,"TASKS":[{"Number":1,"Title":"x","priority":"decrypting","recurrence":1}]}""");
+        var legacy = await StorageService.ReadFileAsync(legacyPath);
+        Check(legacy.Tasks.Count == 1 && legacy.Tasks[0].Priority == TaskPriority.Decrypting && legacy.Tasks[0].Recurrence == Recurrence.Daily,
+            "json: reader stays case-insensitive and accepts numeric enums");
+
         string newerPath = Path.Combine(dir, "newer", "cyber_data.json");
         Directory.CreateDirectory(Path.GetDirectoryName(newerPath)!);
         string newerJson = """{"schemaVersion":99,"nextTaskNumber":2,"futureField":{"x":1},"tasks":[{"number":1,"title":"From the future"}]}""";

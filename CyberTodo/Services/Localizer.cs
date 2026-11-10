@@ -69,6 +69,7 @@ public sealed class Localizer : ObservableObject
         ["Update_Check"] = "DENETLE",
         ["Update_Open"] = "SAYFAYI AÇ",
         ["Update_NotConfigured"] = "GitHub deposu henüz ayarlanmadı (yayın derlemesinde otomatik gelir).",
+        ["Update_NoRelease"] = "Henüz yayınlanmış bir sürüm yok (ya da depo gizli).",
         ["Update_Checking"] = "Denetleniyor…",
         ["Update_UpToDate"] = "Güncel ({0})",
         ["Update_Available"] = "Yeni sürüm mevcut: {0}",
@@ -364,6 +365,7 @@ public sealed class Localizer : ObservableObject
         ["Update_Check"] = "CHECK",
         ["Update_Open"] = "OPEN PAGE",
         ["Update_NotConfigured"] = "GitHub repository not configured yet (set automatically in release builds).",
+        ["Update_NoRelease"] = "No published release yet (or the repository is private).",
         ["Update_Checking"] = "Checking…",
         ["Update_UpToDate"] = "Up to date ({0})",
         ["Update_Available"] = "New version available: {0}",
@@ -635,6 +637,10 @@ public sealed class Localizer : ObservableObject
         OnPropertyChanged(nameof(Language));
         OnPropertyChanged(nameof(Culture));
     }
+
+    /// <summary>Tanımlı anahtarlar (kullanım taraması testi için).</summary>
+    internal static IReadOnlyCollection<string> Keys(AppLanguage language) =>
+        language == AppLanguage.English ? s_en.Keys : s_tr.Keys;
 
     /// <summary>Test/tutarlılık kontrolü: iki dilde de aynı anahtar seti olmalı.</summary>
     public static IReadOnlyCollection<string> MissingKeys() =>

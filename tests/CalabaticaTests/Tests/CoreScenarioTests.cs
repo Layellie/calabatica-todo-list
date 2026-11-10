@@ -269,6 +269,16 @@ internal static class CoreScenarioTests
         var fail = new UpdateService("acme/calabatica", new Version(2, 0, 0), _ => throw new System.Net.Http.HttpRequestException("404"));
         Check((await fail.CheckAsync()).Status == UpdateCheckStatus.Failed, "network failure -> Failed (no throw)");
         Check((await new UpdateService(null, new Version(2, 0, 0)).CheckAsync()).Status == UpdateCheckStatus.NotConfigured, "unconfigured -> no network");
+        var noRelease = new UpdateService("acme/calabatica", new Version(2, 0, 0),
+            _ => throw new System.Net.Http.HttpRequestException("Not Found", null, System.Net.HttpStatusCode.NotFound));
+        var noReleaseResult = await noRelease.CheckAsync();
+        Check(noReleaseResult.Status == UpdateCheckStatus.NoRelease && noReleaseResult.Error is null, "HTTP 404 -> NoRelease (not a failure)");
+        var forbidden = new UpdateService("acme/calabatica", new Version(2, 0, 0),
+            _ => throw new System.Net.Http.HttpRequestException("rate limited", null, System.Net.HttpStatusCode.Forbidden));
+        Check((await forbidden.CheckAsync()).Status == UpdateCheckStatus.Failed, "HTTP 403 (rate limit) stays a failure");
+        var vmNoRelease = new MainViewModel(new StorageService(Path.Combine(ctx.Dir, "norelease", "cyber_data.json")), noRelease);
+        await vmNoRelease.CheckUpdatesCommand.ExecuteAsync(null);
+        Check(vmNoRelease.UpdateStatusText == Localizer.Instance["Update_NoRelease"] && !vmNoRelease.HasUpdate, "settings text for 404: 'no published release yet'");
 
         // ── Yeni VM: tema, başlangıç, güncelleme rozeti, şablon, sıralama, istatistik, takvim ──
         File.Delete(path);

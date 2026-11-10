@@ -131,87 +131,99 @@ public static class QuickAddParser
 
         if (word.Length >= 2 && word[0] == '*')
         {
-            string body = word[1..];
-            if (s_recurrences.TryGetValue(Normalize(body), out var rec))
-            {
-                recurrence = rec;
-                return true;
-            }
-
-            if (s_dayGroups.TryGetValue(Normalize(body), out var group))
-            {
-                recurrence = Recurrence.SelectedDays;
-                repeatDays = group;
-                return true;
-            }
-
-            // "*pzt,çar,cum": tüm parçalar gün adı olmalı; biri bile tanınmazsa kelime başlıkta kalır.
-            var mask = WeekDays.None;
-            foreach (string part in body.Split(',', StringSplitOptions.RemoveEmptyEntries))
-            {
-                if (!s_dayNames.TryGetValue(Normalize(part), out var flag))
-                {
-                    return false;
-                }
-
-                mask |= flag;
-            }
-
-            if (mask != WeekDays.None)
-            {
-                recurrence = Recurrence.SelectedDays;
-                repeatDays = mask;
-                return true;
-            }
-
-            return false;
+            return TryApplyRecurrence(word[1..], ref recurrence, ref repeatDays);
         }
 
         if (word.Length >= 2 && word[0] == '@')
         {
-            string token = word[1..];
-            string key = Normalize(token);
+            return TryApplyDateOrTime(word[1..], today, ref date, ref time);
+        }
 
-            if (key is "bugün" or "today")
+        return false;
+    }
+
+    /// <summary>"*günlük", "*haftaiçi", "*pzt,çar,cum" gövdesi (başındaki * atılmış). Tanınmazsa false: kelime başlıkta kalır.</summary>
+    private static bool TryApplyRecurrence(string body, ref Recurrence? recurrence, ref WeekDays repeatDays)
+    {
+        if (s_recurrences.TryGetValue(Normalize(body), out var rec))
+        {
+            recurrence = rec;
+            return true;
+        }
+
+        if (s_dayGroups.TryGetValue(Normalize(body), out var group))
+        {
+            recurrence = Recurrence.SelectedDays;
+            repeatDays = group;
+            return true;
+        }
+
+        // "*pzt,çar,cum": tüm parçalar gün adı olmalı; biri bile tanınmazsa kelime başlıkta kalır.
+        var mask = WeekDays.None;
+        foreach (string part in body.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!s_dayNames.TryGetValue(Normalize(part), out var flag))
             {
-                date = today;
-                return true;
+                return false;
             }
 
-            if (key is "yarın" or "tomorrow")
-            {
-                date = today.AddDays(1);
-                return true;
-            }
+            mask |= flag;
+        }
 
-            if (s_weekdays.TryGetValue(key, out var weekday))
-            {
-                // Bugün o günse bugün; değilse önümüzdeki ilk o gün.
-                int delta = ((int)weekday - (int)today.DayOfWeek + 7) % 7;
-                date = today.AddDays(delta);
-                return true;
-            }
+        if (mask != WeekDays.None)
+        {
+            recurrence = Recurrence.SelectedDays;
+            repeatDays = mask;
+            return true;
+        }
 
-            // Saat yalnızca ":" ile: "@1.12" 1 Aralık'tır, 01:12 değil.
-            if (token.Contains(':', StringComparison.Ordinal) && InputParsing.TryParseTime(token, out var parsedTime))
-            {
-                time = parsedTime;
-                return true;
-            }
+        return false;
+    }
 
-            if (InputParsing.TryParseDate(token, out var fullDate))
-            {
-                date = fullDate;
-                return true;
-            }
+    /// <summary>"@bugün", "@cuma", "@25.11", "@25.11.2026", "@14:30" gövdesi (başındaki @ atılmış).</summary>
+    private static bool TryApplyDateOrTime(string token, DateOnly today, ref DateOnly? date, ref TimeOnly? time)
+    {
+        string key = Normalize(token);
 
-            // Yıl verilmemiş gün.ay: bu yıl, geçmişte kaldıysa gelecek yıl.
-            if (DateTime.TryParseExact(token, s_dayMonthFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dayMonth))
-            {
-                var candidate = new DateOnly(today.Year, dayMonth.Month, dayMonth.Day);
-                date = candidate < today ? candidate.AddYears(1) : candidate;
-                return true;
-            }
+        if (key is "bugün" or "today")
+        {
+            date = today;
+            return true;
+        }
+
+        if (key is "yarın" or "tomorrow")
+        {
+            date = today.AddDays(1);
+            return true;
+        }
+
+        if (s_weekdays.TryGetValue(key, out var weekday))
+        {
+            // Bugün o günse bugün; değilse önümüzdeki ilk o gün.
+            int delta = ((int)weekday - (int)today.DayOfWeek + 7) % 7;
+            date = today.AddDays(delta);
+            return true;
+        }
+
+        // Saat yalnızca ":" ile: "@1.12" 1 Aralık'tır, 01:12 değil.
+        if (token.Contains(':', StringComparison.Ordinal) && InputParsing.TryParseTime(token, out var parsedTime))
+        {
+            time = parsedTime;
+            return true;
+        }
+
+        if (InputParsing.TryParseDate(token, out var fullDate))
+        {
+            date = fullDate;
+            return true;
+        }
+
+        // Yıl verilmemiş gün.ay: bu yıl, geçmişte kaldıysa gelecek yıl.
+        if (DateTime.TryParseExact(token, s_dayMonthFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dayMonth))
+        {
+            var candidate = new DateOnly(today.Year, dayMonth.Month, dayMonth.Day);
+            date = candidate < today ? candidate.AddYears(1) : candidate;
+            return true;
         }
 
         return false;

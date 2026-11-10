@@ -242,8 +242,34 @@ public sealed class StorageService
         return new LoadResult(new CyberData(), IsNew: true, CorruptBackupFile: Path.GetFileName(backupPath));
     }
 
-    /// <summary>Elle düzenlenmiş / eski (v1) JSON'lara karşı savunma: null listeler, sınır dışı değerler, numara çakışması.</summary>
-    private static void Normalize(CyberData data)
+    /// <summary>
+    /// Elle düzenlenmiş / eski (v1) JSON'lara karşı savunma: null listeler, sınır dışı değerler, numara çakışması.
+    /// Sıra önemli: şema geçişleri ayarlar düzeltildikten sonra, görev kuralları ise geçişlerden sonra çalışır
+    /// (NormalizeTests bu davranışı sabitler).
+    /// </summary>
+    internal static void Normalize(CyberData data)
+    {
+        EnsureCollections(data);
+        NormalizeSavedFilters(data);
+        NormalizeArchiveAndFocus(data);
+        NormalizeTemplates(data);
+        data.Tasks.RemoveAll(static t => t is null);
+        data.Days.RemoveAll(static d => d is null);
+        NormalizeSettings(data.Settings);
+
+        SchemaMigrations.Apply(data); // sürüm adımları (Services/SchemaMigrations.cs)
+
+        NormalizeMiniPosition(data.Settings);
+        foreach (var task in data.Tasks)
+        {
+            NormalizeTask(task);
+        }
+
+        NormalizeDays(data);
+        EnsureNextTaskNumber(data);
+    }
+
+    private static void EnsureCollections(CyberData data)
     {
         data.Settings ??= new AppSettings();
         data.Tasks ??= [];
@@ -252,6 +278,10 @@ public sealed class StorageService
         data.FocusSessions ??= [];
         data.Archive ??= new ArchiveSummary();
         data.SavedFilters ??= [];
+    }
+
+    private static void NormalizeSavedFilters(CyberData data)
+    {
         data.SavedFilters.RemoveAll(static f => f is null || string.IsNullOrWhiteSpace(f.Name));
         foreach (var filter in data.SavedFilters)
         {
@@ -261,6 +291,10 @@ public sealed class StorageService
                 filter.SmartView = SmartView.All;
             }
         }
+    }
+
+    private static void NormalizeArchiveAndFocus(CyberData data)
+    {
         data.Archive.TaskCount = Math.Max(0, data.Archive.TaskCount);
         data.Archive.TrackedMinutes = Math.Max(0, data.Archive.TrackedMinutes);
         data.FocusSessions.RemoveAll(static s => s is null || s.Minutes <= 0);
@@ -269,7 +303,10 @@ public sealed class StorageService
             session.Minutes = Math.Min(session.Minutes, 24 * 60);
             session.Title ??= string.Empty;
         }
+    }
 
+    private static void NormalizeTemplates(CyberData data)
+    {
         data.Templates.RemoveAll(static t => t is null || t.Items is null);
         foreach (var template in data.Templates)
         {
@@ -281,15 +318,15 @@ public sealed class StorageService
                 item.EstimatedHours = double.IsFinite(item.EstimatedHours) ? Math.Clamp(item.EstimatedHours, 0.01, 24) : 1;
             }
         }
+    }
 
-        if (!Enum.IsDefined(data.Settings.Theme))
+    private static void NormalizeSettings(AppSettings settings)
+    {
+        if (!Enum.IsDefined(settings.Theme))
         {
-            data.Settings.Theme = ThemeId.Neon;
+            settings.Theme = ThemeId.Neon;
         }
-        data.Tasks.RemoveAll(static t => t is null);
-        data.Days.RemoveAll(static d => d is null);
 
-        var settings = data.Settings;
         if (!double.IsFinite(settings.UiScale) || settings.UiScale < 0.5 || settings.UiScale > 1.5)
         {
             settings.UiScale = AppSettings.DefaultUiScale;
@@ -299,50 +336,57 @@ public sealed class StorageService
         {
             settings.FocusMinutes = 25;
         }
+    }
 
-        SchemaMigrations.Apply(data); // sürüm adımları (Services/SchemaMigrations.cs)
-
-        if ((settings.MiniLeft is { } miniLeft && !double.IsFinite(miniLeft)) || (settings.MiniTop is { } miniTop && !double.IsFinite(miniTop)))
+    /// <summary>Konum yarım bozuksa (biri sonlu değil) ikisi de silinir: mini pencere varsayılan köşeye açılır.</summary>
+    private static void NormalizeMiniPosition(AppSettings settings)
+    {
+        if ((settings.MiniLeft is { } left && !double.IsFinite(left)) || (settings.MiniTop is { } top && !double.IsFinite(top)))
         {
             settings.MiniLeft = null;
             settings.MiniTop = null;
         }
+    }
 
-
-        foreach (var task in data.Tasks)
+    private static void NormalizeTask(CyberTask task)
+    {
+        task.TrackedMinutes = Math.Max(0, task.TrackedMinutes);
+        task.CompletionCreditHours = double.IsFinite(task.CompletionCreditHours) ? Math.Max(0, task.CompletionCreditHours) : 0;
+        task.Title ??= string.Empty;
+        task.Subtasks ??= [];
+        task.Subtasks.RemoveAll(static s => s is null);
+        task.Progress = double.IsFinite(task.Progress) ? Math.Clamp(task.Progress, 0, 100) : 0;
+        task.EstimatedHours = double.IsFinite(task.EstimatedHours) ? Math.Clamp(task.EstimatedHours, 0, 24) : 0;
+        if (!task.IsCompleted)
         {
-            task.TrackedMinutes = Math.Max(0, task.TrackedMinutes);
-            task.CompletionCreditHours = double.IsFinite(task.CompletionCreditHours) ? Math.Max(0, task.CompletionCreditHours) : 0;
-            task.Title ??= string.Empty;
-            task.Subtasks ??= [];
-            task.Subtasks.RemoveAll(static s => s is null);
-            task.Progress = double.IsFinite(task.Progress) ? Math.Clamp(task.Progress, 0, 100) : 0;
-            task.EstimatedHours = double.IsFinite(task.EstimatedHours) ? Math.Clamp(task.EstimatedHours, 0, 24) : 0;
-            if (!task.IsCompleted)
-            {
-                task.CompletedAt = null;
-            }
-
-            if (task.DueAt is null)
-            {
-                task.HasDueTime = false;
-            }
-
-            // Gün seçilmemiş "seçili günler" tekrarı anlamsız → tekrarsız kabul et.
-            task.RepeatDays &= WeekDays.All;
-            if (task.Recurrence == Recurrence.SelectedDays && task.RepeatDays == WeekDays.None)
-            {
-                task.Recurrence = Recurrence.None;
-            }
+            task.CompletedAt = null;
         }
 
+        if (task.DueAt is null)
+        {
+            task.HasDueTime = false;
+        }
+
+        // Gün seçilmemiş "seçili günler" tekrarı anlamsız → tekrarsız kabul et.
+        task.RepeatDays &= WeekDays.All;
+        if (task.Recurrence == Recurrence.SelectedDays && task.RepeatDays == WeekDays.None)
+        {
+            task.Recurrence = Recurrence.None;
+        }
+    }
+
+    private static void NormalizeDays(CyberData data)
+    {
         foreach (var day in data.Days)
         {
             day.Entries ??= [];
             day.HoursWorked = double.IsFinite(day.HoursWorked) ? Math.Max(0, day.HoursWorked) : 0;
             day.CompletedCount = Math.Max(0, day.CompletedCount);
         }
+    }
 
+    private static void EnsureNextTaskNumber(CyberData data)
+    {
         int maxNumber = data.Tasks.Count == 0 ? 0 : data.Tasks.Max(static t => t.Number);
         if (data.NextTaskNumber <= maxNumber)
         {

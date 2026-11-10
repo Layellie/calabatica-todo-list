@@ -10,6 +10,9 @@ namespace CyberTodo.Services;
 public enum UpdateCheckStatus
 {
     NotConfigured,
+
+    /// <summary>GitHub 404 verdi: henüz yayınlanmış sürüm yok (ya da depo gizli, herkese açık API göremez).</summary>
+    NoRelease,
     UpToDate,
     UpdateAvailable,
     Failed,
@@ -80,9 +83,15 @@ public sealed partial class UpdateService
             var status = latest.Version > CurrentVersion ? UpdateCheckStatus.UpdateAvailable : UpdateCheckStatus.UpToDate;
             return new UpdateCheckResult(status, latest, null);
         }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            // "latest release" yoksa 404 döner: hata değil, "henüz yayın yok" durumu (gizli depoda da böyle görünür).
+            AppLog.Warn("UpdateCheck", "No published release found (404).");
+            return new UpdateCheckResult(UpdateCheckStatus.NoRelease, null, null);
+        }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
-            // Ağ yok / zaman aşımı / depo yok (404) / hız sınırı (403): kullanıcıya gösterilir, uygulama etkilenmez.
+            // Ağ yok / zaman aşımı / hız sınırı (403): kullanıcıya gösterilir, uygulama etkilenmez.
             AppLog.Warn("UpdateCheck", $"{ex.GetType().Name}: {ex.Message}");
             return new UpdateCheckResult(UpdateCheckStatus.Failed, null, ex.Message);
         }

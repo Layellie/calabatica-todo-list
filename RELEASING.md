@@ -10,8 +10,10 @@
 - Uygulama açılışta (ayarlardan kapatılabilir) `https://api.github.com/repos/<depo>/releases/latest` adresini okur.
 - Daha yeni sürüm varsa başlıkta `▲ v1.1` görünür; tıklayınca yayın sayfası açılır.
 - Depo bilgisi derleme anında exe'ye gömülür: yayın akışı `-p:GitHubRepository=${{ github.repository }}` geçirir.
-  Yerelde denemek için csproj'daki `<GitHubRepository>` değerine `kullanici/depo` yazılabilir.
+  csproj'daki `<GitHubRepository>` varsayılanı bu depodur (yerel derlemede de çalışır); fork'ta değiştirilebilir.
 - Depo boşsa denetim **kapalıdır** (ağa hiç çıkılmaz).
+- GitHub `releases/latest` için 404 dönerse ayarlarda "henüz yayınlanmış sürüm yok (ya da depo gizli)" yazar.
+  **Depo private ise herkese açık API sürümü göremez ve indirme çalışmaz: otomatik güncelleme için depo public olmalıdır.**
 
 Yayın akışı güncelleme için şunları üretir (`scripts/package-update.ps1`):
 - `CALABATICA-win-x64.zip` — yalnızca `CALABATICA.exe` içeren paket

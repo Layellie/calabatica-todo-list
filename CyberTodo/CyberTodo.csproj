@@ -29,10 +29,10 @@
 
     <!--
       Güncelleme denetimi için GitHub deposu ("kullanici/depo"). Boşken denetim kapalıdır.
-      Yayın akışı bunu otomatik doldurur (-p:GitHubRepository=${{ github.repository }}).
-      Yerelde denemek için buraya yazılabilir.
+      Varsayılan bu depo: yerel derlemede de "depo ayarlanmadı" çıkmaz. Yayın akışı aynı değeri
+      -p:GitHubRepository=${{ github.repository }} ile geçirir (fork'ta kendi deposu gömülür).
     -->
-    <GitHubRepository Condition="'$(GitHubRepository)' == ''"></GitHubRepository>
+    <GitHubRepository Condition="'$(GitHubRepository)' == ''">Layellie/calabatica-todo-list</GitHubRepository>
   </PropertyGroup>
 
   <ItemGroup>

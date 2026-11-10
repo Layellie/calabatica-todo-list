@@ -113,6 +113,22 @@ internal static class UiSmokeTests
         await Idle();
         Shot((System.Windows.FrameworkElement)mini.Content, "mini");
 
+        // Erişilebilirlik: ekran okuyucu her düğmeye bir ad okuyabilmeli (AutomationProperties.Name, metin içeriği veya ipucu).
+        var unnamed = new List<string>();
+        foreach (var root in new System.Windows.DependencyObject[] { win, mini })
+        {
+            foreach (var button in FindAll<System.Windows.Controls.Primitives.ButtonBase>(root))
+            {
+                // Şablonda tetikleyiciyle gizlenenler (ör. eylemi olmayan toast düğmeleri) ekran okuyucuya zaten görünmez.
+                if (button.Visibility == System.Windows.Visibility.Visible && !HasAccessibleName(button))
+                {
+                    unnamed.Add($"{root.GetType().Name}:{button.GetType().Name} name='{button.Name}' content={button.Content?.GetType().Name ?? "null"} dc={button.DataContext?.GetType().Name}");
+                }
+            }
+        }
+
+        Check(unnamed.Count == 0, $"a11y: every button has an accessible name ({unnamed.Count} without)" +
+            (unnamed.Count > 0 ? "\n      " + string.Join("\n      ", unnamed.Distinct().Take(40)) : string.Empty));
         Check(bindingErrors.Count == 0, $"ui: no binding errors across all tabs/panels ({bindingErrors.Count})" +
             (bindingErrors.Count > 0 ? "\n      " + string.Join("\n      ", bindingErrors.Distinct().Take(8)) : string.Empty));
         Check(winRoot.ActualWidth > 0 && win.IsLoaded, "ui: main window loaded and laid out off-screen");
@@ -122,5 +138,22 @@ internal static class UiSmokeTests
         System.Diagnostics.PresentationTraceSources.DataBindingSource.Listeners.Remove(bindingListener);
         mini.CloseForShutdown();
         win.Hide();
+    }
+
+    /// <summary>Düğmenin ekran okuyucuya verdiği ad: AutomationProperties.Name, metin içerik (ya da içindeki metin) veya ipucu.</summary>
+    private static bool HasAccessibleName(System.Windows.Controls.Primitives.ButtonBase button)
+    {
+        static bool Has(object? o) => o switch
+        {
+            string s => !string.IsNullOrWhiteSpace(s),
+            System.Windows.Controls.TextBlock tb => !string.IsNullOrWhiteSpace(tb.Text),
+            System.Windows.Controls.Panel p => p.Children.OfType<object>().Any(Has),
+            System.Windows.Controls.ContentControl cc => Has(cc.Content),
+            _ => false,
+        };
+
+        return !string.IsNullOrWhiteSpace(System.Windows.Automation.AutomationProperties.GetName(button))
+            || Has(button.Content) || Has(button.ToolTip)
+            || System.Windows.Automation.AutomationProperties.GetLabeledBy(button) is not null;
     }
 }

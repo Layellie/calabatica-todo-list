@@ -132,6 +132,7 @@ public sealed partial class MainViewModel : ObservableObject
         IsSettingsOpen = false;
         IsTemplatesOpen = false;
         IsDataOpen = false;
+        IsOnboardingOpen = false;
     }
 
     // ═════════════════════════════ Yaşam döngüsü ═════════════════════════════
@@ -190,6 +191,11 @@ public sealed partial class MainViewModel : ObservableObject
         _clock.Start();
         CheckReminders(now); // uygulama kapalıyken kaçırılan hatırlatmalar hemen gösterilir
 
+        if (isNew && !_settings.OnboardingDone)
+        {
+            OpenOnboarding(); // ilk kurulum: kısa rehber
+        }
+
         if (!isNew)
         {
             _ = CreateDailyBackupAsync(now); // yüklenen hâlin günlük yedeği (anlık görüntü senkron alınır); hata UI'a yansır
@@ -218,6 +224,14 @@ public sealed partial class MainViewModel : ObservableObject
         {
             _daysByDate[day.Date] = day; // aynı tarih iki kez varsa sonuncusu geçerli
         }
+
+        SavedFilters.Clear();
+        foreach (var filter in data.SavedFilters)
+        {
+            SavedFilters.Add(filter);
+        }
+
+        OnSavedFiltersChanged();
 
         Templates.Clear();
         foreach (var template in data.Templates)
@@ -303,6 +317,10 @@ public sealed partial class MainViewModel : ObservableObject
         else if (IsDataOpen)
         {
             IsDataOpen = false;
+        }
+        else if (IsOnboardingOpen)
+        {
+            CloseOnboarding();
         }
         else if (SearchText.Length > 0)
         {

@@ -13,7 +13,8 @@ string path = Path.Combine(dir, "cyber_data.json");
 AppLog.Configure(Path.Combine(dir, "logs")); // testler gerçek log klasörüne yazmasın
 // Paylaşılan sahte saat (öğlen): "bugün 23:59" gibi testler gün içindeki saatten bağımsız.
 var clock = new ManualTime(DateTime.Today.AddHours(12));
-async Task<MainViewModel> Fresh() { var v = new MainViewModel(new StorageService(path), time: clock); await v.InitializeAsync(); return v; }
+// Rehber ayrı test edilir; buradaki senaryolar "rehberi kapatmış kullanıcı" ile çalışır.
+async Task<MainViewModel> Fresh() { var v = new MainViewModel(new StorageService(path), time: clock); await v.InitializeAsync(); v.CloseOnboardingCommand.Execute(null); return v; }
 
 var thread = new Thread(() =>
 {
@@ -905,6 +906,69 @@ var thread = new Thread(() =>
             iv.SearchText = string.Empty;
             Check(iv.SmartViews.First(s => s.Value == SmartView.Today).Count == 4 && iv.SmartViews.First(s => s.Value == SmartView.Overdue).Count == 2, "incremental: smart-view counts still updated (08:00: 4 today, 2 overdue)");
 
+            // ══════════════ İlk açılış rehberi ══════════════
+            var ob = new MainViewModel(new StorageService(Path.Combine(dir, "onboarding", "cyber_data.json")), time: new ManualTime(DateTime.Today.AddHours(12)));
+            await ob.InitializeAsync();
+            Check(ob.IsOnboardingOpen && ob.OnboardingStepText == "1 / 3" && !ob.PreviousOnboardingStepCommand.CanExecute(null) && ob.OnboardingBody.Length > 50,
+                "onboarding: opens on first run at step 1");
+            ob.NextOnboardingStepCommand.Execute(null);
+            ob.NextOnboardingStepCommand.Execute(null);
+            Check(ob.IsLastOnboardingStep && ob.PreviousOnboardingStepCommand.CanExecute(null) && ob.OnboardingTitle != "!Onb_3_Title!", "onboarding: step 3 is last");
+            ob.NextOnboardingStepCommand.Execute(null);
+            ob.FlushNow();
+            Check(!ob.IsOnboardingOpen && (await StorageService.ReadFileAsync(Path.Combine(dir, "onboarding", "cyber_data.json"))).Settings.OnboardingDone,
+                "onboarding: finishing closes it and remembers");
+            var ob2 = new MainViewModel(new StorageService(Path.Combine(dir, "onboarding", "cyber_data.json")));
+            await ob2.InitializeAsync();
+            Check(!ob2.IsOnboardingOpen, "onboarding: not shown again on next launch");
+            ob2.OpenOnboardingCommand.Execute(null);
+            Check(ob2.IsOnboardingOpen && ob2.OnboardingStep == 0, "onboarding: ? reopens from step 1");
+            ob2.EscapeCommand.Execute(null);
+            Check(!ob2.IsOnboardingOpen, "onboarding: Esc closes");
+
+            // ══════════════ Kayıtlı görünümler ══════════════
+            var sfPath = Path.Combine(dir, "filters", "cyber_data.json");
+            var sf = new MainViewModel(new StorageService(sfPath), time: new ManualTime(DateTime.Today.AddHours(9)));
+            await sf.InitializeAsync();
+            sf.CloseOnboardingCommand.Execute(null);
+            foreach (string title in new[] { "Write report #work @today @17:00", "Read reports #work", "Dishes #home @today @20:00" })
+            {
+                sf.NewTaskTitle = title;
+                await sf.AddTaskCommand.ExecuteAsync(null);
+            }
+
+            Check(!sf.SaveCurrentFilterCommand.CanExecute(null), "filters: default view cannot be saved");
+            sf.SelectedCategoryFilter = sf.CategoryFilters.First(o => o.Value == "work");
+            sf.SelectedSmartView = sf.SmartViews.First(o => o.Value == SmartView.Today);
+            sf.SearchText = "report";
+            await sf.SaveCurrentFilterCommand.ExecuteAsync(null);
+            var saved = sf.SavedFilters.Single();
+            Check(saved.Name.Contains("#work") && saved.Name.Contains("“report”") && saved.IsActive && !sf.SaveCurrentFilterCommand.CanExecute(null),
+                "filters: auto-named, active, duplicate cannot be saved: " + saved.Name);
+            sf.SearchText = string.Empty;
+            sf.SelectedCategoryFilter = sf.CategoryFilters[0];
+            sf.SelectedSmartView = sf.SmartViews[0];
+            Check(!saved.IsActive && sf.ActiveView.Cast<CyberTask>().Count() == 3, "filters: changing filters deactivates the chip");
+            sf.ApplySavedFilterCommand.Execute(saved);
+            Check(saved.IsActive && sf.ActiveView.Cast<CyberTask>().Select(t => t.Title).SequenceEqual(["Write report"]), "filters: applying restores search + category + list");
+            sf.FlushNow();
+            var sfReloaded = new MainViewModel(new StorageService(sfPath));
+            await sfReloaded.InitializeAsync();
+            Check(sfReloaded.SavedFilters.Count == 1 && sfReloaded.SavedFilters[0].Category == "work" && sfReloaded.SavedFilters[0].SmartView == SmartView.Today,
+                "filters: persisted");
+            await sf.DeleteSavedFilterCommand.ExecuteAsync(saved);
+            Check(!sf.HasSavedFilters && sf.SaveCurrentFilterCommand.CanExecute(null), "filters: delete");
+
+            // ══════════════ Yüksek kontrast ══════════════
+            sf.SelectedThemeOption = sf.ThemeOptions.First(o => o.Value == ThemeId.Matrix);
+            sf.SetSystemHighContrast(true);
+            Check(sf.CurrentTheme.IsHighContrast && sf.SelectedThemeOption.Value == ThemeId.Matrix, "contrast: Windows high contrast overrides the palette, choice kept");
+            sf.SelectedThemeOption = sf.ThemeOptions.First(o => o.Value == ThemeId.Amber);
+            Check(sf.CurrentTheme.IsHighContrast, "contrast: picking a theme while high contrast is on keeps it readable");
+            sf.SetSystemHighContrast(false);
+            Check(sf.CurrentTheme.Id == ThemeId.Amber, "contrast: turning it off restores the chosen theme");
+            Check(sf.ThemeOptions.Any(o => o.Value == ThemeId.HighContrast), "contrast: also selectable manually");
+
             // ══════════════ Şema geçişleri (örnek eski dosyalar) ══════════════
             Check(SchemaMigrations.LatestVersion == CyberData.CurrentSchemaVersion, "migrations: last step matches CurrentSchemaVersion");
             string v2Json = """
@@ -1043,7 +1107,9 @@ var thread = new Thread(() =>
 
             var uiClock = new ManualTime(DateTime.Today.AddHours(11));
             var uiVm = new MainViewModel(new StorageService(Path.Combine(dir, "ui", "cyber_data.json")), time: uiClock);
-            var win = new MainWindow(uiVm, tray: null)
+            MainWindow? win = null;
+            System.Windows.FrameworkElement winRoot0() => (System.Windows.FrameworkElement)win!.Content;
+            win = new MainWindow(uiVm, tray: null)
             {
                 ShowActivated = false,
                 ShowInTaskbar = false,
@@ -1053,6 +1119,9 @@ var thread = new Thread(() =>
             };
             win.Show();
             await Idle();
+            Check(uiVm.IsOnboardingOpen, "ui: first run shows the onboarding guide");
+            Shot(winRoot0(), "onboarding");
+            uiVm.CloseOnboardingCommand.Execute(null);
             foreach (string title in new[] { "Write report #work @today @17:00 !", "Gym *mon,wed,fri @today", "Read book #study ~2" })
             {
                 uiVm.NewTaskTitle = title;
@@ -1062,7 +1131,7 @@ var thread = new Thread(() =>
             await uiVm.StartFocusCommand.ExecuteAsync(uiVm.ActiveTasks[0]);
             uiVm.MoveSelection(1);
             await Idle();
-            var winRoot = (System.Windows.FrameworkElement)win.Content;
+            var winRoot = winRoot0();
             Shot(winRoot, "main");
             foreach (var mode in Enum.GetValues<ChartMode>())
             {
@@ -1078,6 +1147,9 @@ var thread = new Thread(() =>
             uiVm.EditTaskCommand.Execute(uiVm.ActiveTasks[1]); await Idle(); Shot(winRoot, "editor");
             uiVm.CancelEditCommand.Execute(null);
             uiClock.Advance(TimeSpan.FromMinutes(25)); uiVm.Tick(); await Idle(); Shot(winRoot, "break");
+            uiVm.SelectedCategoryFilter = uiVm.CategoryFilters.Last(); await uiVm.SaveCurrentFilterCommand.ExecuteAsync(null);
+            uiVm.SetSystemHighContrast(true); await Idle(); Shot(winRoot, "highcontrast");
+            uiVm.SetSystemHighContrast(false);
 
             // Mini pencere doğrudan (MainWindow'un ShowMini'si ekrana yerleştirip etkinleştirirdi)
             // (IsMiniMode'u değiştirmek MainWindow'un gerçek mini penceresini ekrana çıkarıp etkinleştirirdi; burada yapılmaz.)

@@ -122,7 +122,7 @@ public sealed partial class MainViewModel
         }
 
         _settings.Theme = value.Value;
-        CurrentTheme = ThemePalette.Get(value.Value);
+        ApplyEffectiveTheme(); // Windows yüksek kontrastı açıksa o öncelikli
         SaveSettingsIfReady();
     }
 
@@ -296,7 +296,7 @@ public sealed partial class MainViewModel
         RefreshWeekdayHeaders();
 
         SelectedThemeOption = OptionSets.Find(OptionSets.Themes, _settings.Theme);
-        CurrentTheme = ThemePalette.Get(_settings.Theme);
+        ApplyEffectiveTheme();
         SelectedTrayOption = OptionSets.Find(OptionSets.OnOff, _settings.MinimizeToTray);
         SelectedAutoUpdateOption = OptionSets.Find(OptionSets.OnOff, _settings.AutoCheckUpdates);
         SelectedBreaksOption = OptionSets.Find(OptionSets.OnOff, _settings.BreaksEnabled);

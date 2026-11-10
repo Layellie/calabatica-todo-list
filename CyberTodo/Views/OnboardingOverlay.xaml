@@ -1,0 +1,50 @@
+<UserControl x:Class="CyberTodo.Views.OnboardingOverlay"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:CyberTodo"
+    xmlns:loc="clr-namespace:CyberTodo.Services">
+    <!-- İlk açılış rehberi: 3 adım, ileri/geri/atla. Metinler Localizer'da (Onb_N_Title / Onb_N_Body). -->
+    <Grid>
+        <local:ChamferFrame Fill="{StaticResource BackdropBrush}" Chamfer="30" Corners="All" />
+        <Grid>
+            <Grid.LayoutTransform>
+                <ScaleTransform ScaleX="{Binding UiScale}" ScaleY="{Binding UiScale}" />
+            </Grid.LayoutTransform>
+            <Grid Width="720" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <local:ChamferFrame Fill="{StaticResource PanelBrush}" Stroke="{DynamicResource YellowBrush}"
+                                    StrokeThickness="2" Chamfer="20" Corners="TopLeft, BottomRight" />
+                <StackPanel Margin="28,22,28,24">
+                    <Grid>
+                        <TextBlock FontSize="22" FontWeight="Bold" Foreground="{DynamicResource YellowBrush}" Text="{Binding OnboardingTitle}" />
+                        <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="13"
+                                   Foreground="{DynamicResource SubtleTextBrush}" Text="{Binding OnboardingStepText}" />
+                    </Grid>
+                    <Rectangle Height="1" Margin="0,10,0,14" Fill="{DynamicResource YellowDimBrush}" />
+                    <TextBlock MinHeight="190" FontSize="15" LineHeight="23" Foreground="{DynamicResource CyanBrush}"
+                               TextWrapping="Wrap" Text="{Binding OnboardingBody}" />
+
+                    <Grid Margin="0,18,0,0">
+                        <Button HorizontalAlignment="Left" Style="{StaticResource ChamferButton}" Content="{loc:Tr Onb_Skip}"
+                                Command="{Binding CloseOnboardingCommand}" />
+                        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                            <Button Margin="0,0,12,0" Style="{StaticResource ChamferButton}" Content="{loc:Tr Onb_Back}"
+                                    Command="{Binding PreviousOnboardingStepCommand}" />
+                            <Button Command="{Binding NextOnboardingStepCommand}">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource AddButton}">
+                                        <Setter Property="Content" Value="{loc:Tr Onb_Next}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsLastOnboardingStep}" Value="True">
+                                                <Setter Property="Content" Value="{loc:Tr Onb_Done}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

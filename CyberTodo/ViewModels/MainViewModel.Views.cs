@@ -39,11 +39,23 @@ public sealed partial class MainViewModel
     [ObservableProperty]
     private LocalizedOption<SortMode> _selectedSortOption;
 
-    partial void OnSearchTextChanged(string value) => RefreshViews();
+    partial void OnSearchTextChanged(string value)
+    {
+        RefreshViews();
+        OnFilterChanged();
+    }
 
-    partial void OnSelectedCategoryFilterChanged(LocalizedOption<string?>? value) => RefreshViews();
+    partial void OnSelectedCategoryFilterChanged(LocalizedOption<string?>? value)
+    {
+        RefreshViews();
+        OnFilterChanged();
+    }
 
-    partial void OnSelectedSmartViewChanged(SmartViewOption? value) => RefreshViews();
+    partial void OnSelectedSmartViewChanged(SmartViewOption? value)
+    {
+        RefreshViews();
+        OnFilterChanged();
+    }
 
     partial void OnSelectedSortOptionChanged(LocalizedOption<SortMode> value)
     {

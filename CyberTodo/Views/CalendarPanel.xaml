@@ -35,7 +35,7 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <TextBlock HorizontalAlignment="Center" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" Text="{Binding}" />
+                    <TextBlock HorizontalAlignment="Center" FontSize="11" Foreground="{DynamicResource SubtleTextBrush}" Text="{Binding}" />
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
@@ -67,7 +67,7 @@
                                 </Grid.RowDefinitions>
                                 <Grid>
                                     <TextBlock x:Name="DayNum" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource AxisTextBrush}" Text="{Binding DayNumber}" />
-                                    <TextBlock HorizontalAlignment="Right" FontSize="10" Foreground="{StaticResource GreyBrush}" Text="{Binding HoursText}" />
+                                    <TextBlock HorizontalAlignment="Right" FontSize="10" Foreground="{DynamicResource GreyBrush}" Text="{Binding HoursText}" />
                                 </Grid>
                                 <ItemsControl Grid.Row="1" Focusable="False" ItemsSource="{Binding PreviewItems}" ClipToBounds="True">
                                     <ItemsControl.ItemTemplate>
@@ -85,14 +85,14 @@
                                                     <Setter TargetName="ItemText" Property="Foreground" Value="{DynamicResource AxisTextBrush}" />
                                                 </DataTrigger>
                                                 <DataTrigger Binding="{Binding IsDone}" Value="True">
-                                                    <Setter TargetName="ItemText" Property="Foreground" Value="{StaticResource GreyBrush}" />
+                                                    <Setter TargetName="ItemText" Property="Foreground" Value="{DynamicResource GreyBrush}" />
                                                     <Setter TargetName="ItemText" Property="TextDecorations" Value="Strikethrough" />
                                                 </DataTrigger>
                                             </DataTemplate.Triggers>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-                                <TextBlock x:Name="MoreText" Grid.Row="2" FontSize="9" Foreground="{StaticResource SubtleTextBrush}"
+                                <TextBlock x:Name="MoreText" Grid.Row="2" FontSize="9" Foreground="{DynamicResource SubtleTextBrush}"
                                            Text="{Binding MoreCount, StringFormat='+{0}'}" />
                             </Grid>
                             <!-- Yoğunluk şeridi (o gün çalışılan saate göre) -->
@@ -103,7 +103,7 @@
                         <DataTrigger Binding="{Binding IsCurrentMonth}" Value="False">
                             <Setter TargetName="CellBg" Property="Background" Value="{StaticResource PanelBrush}" />
                             <Setter TargetName="CellBg" Property="BorderBrush" Value="#0F151B" />
-                            <Setter TargetName="DayNum" Property="Foreground" Value="{StaticResource GreyBrush}" />
+                            <Setter TargetName="DayNum" Property="Foreground" Value="{DynamicResource GreyBrush}" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding MoreCount}" Value="0">
                             <Setter TargetName="MoreText" Property="Visibility" Value="Collapsed" />
@@ -150,7 +150,7 @@
                                     <Setter TargetName="SelGlyph" Property="Text" Value="↻ " />
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding IsDone}" Value="True">
-                                    <Setter TargetName="SelText" Property="Foreground" Value="{StaticResource GreyBrush}" />
+                                    <Setter TargetName="SelText" Property="Foreground" Value="{DynamicResource GreyBrush}" />
                                     <Setter TargetName="SelText" Property="TextDecorations" Value="Strikethrough" />
                                     <Setter TargetName="SelGlyph" Property="Text" Value="✓ " />
                                 </DataTrigger>
@@ -159,7 +159,7 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </ScrollViewer>
-            <TextBlock FontSize="13" Foreground="{StaticResource GreyBrush}" Text="{loc:Tr Cal_Empty}">
+            <TextBlock FontSize="13" Foreground="{DynamicResource GreyBrush}" Text="{loc:Tr Cal_Empty}">
                 <TextBlock.Style>
                     <Style TargetType="TextBlock">
                         <Setter Property="Visibility" Value="Collapsed" />

@@ -57,14 +57,14 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <StackPanel>
-                <TextBlock Margin="0,0,0,8" FontSize="12" Foreground="{StaticResource SubtleTextBrush}" Text="{loc:Tr Focus_ByCategory}" />
+                <TextBlock Margin="0,0,0,8" FontSize="12" Foreground="{DynamicResource SubtleTextBrush}" Text="{loc:Tr Focus_ByCategory}" />
                 <ItemsControl Focusable="False" ItemsSource="{Binding FocusByCategory}" ItemTemplate="{StaticResource FocusSliceTemplate}" />
             </StackPanel>
             <StackPanel Grid.Column="2">
-                <TextBlock Margin="0,0,0,8" FontSize="12" Foreground="{StaticResource SubtleTextBrush}" Text="{loc:Tr Focus_ByTask}" />
+                <TextBlock Margin="0,0,0,8" FontSize="12" Foreground="{DynamicResource SubtleTextBrush}" Text="{loc:Tr Focus_ByTask}" />
                 <ItemsControl Focusable="False" ItemsSource="{Binding FocusByTask}" ItemTemplate="{StaticResource FocusSliceTemplate}" />
             </StackPanel>
-            <TextBlock Grid.ColumnSpan="3" Margin="0,30,0,0" FontSize="13" Foreground="{StaticResource GreyBrush}"
+            <TextBlock Grid.ColumnSpan="3" Margin="0,30,0,0" FontSize="13" Foreground="{DynamicResource GreyBrush}"
                        TextWrapping="Wrap" Text="{loc:Tr Focus_Empty}">
                 <TextBlock.Style>
                     <Style TargetType="TextBlock">

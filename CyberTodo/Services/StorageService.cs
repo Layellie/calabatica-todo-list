@@ -246,6 +246,16 @@ public sealed class StorageService
         data.Templates ??= [];
         data.FocusSessions ??= [];
         data.Archive ??= new ArchiveSummary();
+        data.SavedFilters ??= [];
+        data.SavedFilters.RemoveAll(static f => f is null || string.IsNullOrWhiteSpace(f.Name));
+        foreach (var filter in data.SavedFilters)
+        {
+            filter.Name = filter.Name.Length > 80 ? filter.Name[..80] : filter.Name;
+            if (!Enum.IsDefined(filter.SmartView))
+            {
+                filter.SmartView = SmartView.All;
+            }
+        }
         data.Archive.TaskCount = Math.Max(0, data.Archive.TaskCount);
         data.Archive.TrackedMinutes = Math.Max(0, data.Archive.TrackedMinutes);
         data.FocusSessions.RemoveAll(static s => s is null || s.Minutes <= 0);

@@ -117,6 +117,7 @@ public sealed partial class MainViewModel
         Tasks = [.. ActiveTasks, .. CompletedTasks],
         FocusSessions = [.. _focusSessions],
         Archive = _archiveSummary,
+        SavedFilters = [.. SavedFilters],
         Days =
         [
             .. _daysByDate.Values

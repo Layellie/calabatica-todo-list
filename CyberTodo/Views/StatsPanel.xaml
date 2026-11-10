@@ -22,7 +22,7 @@
             </ItemsControl.ItemsPanel>
         </ItemsControl>
 
-        <TextBlock Grid.Row="1" Margin="0,6,0,8" FontSize="12" Foreground="{StaticResource SubtleTextBrush}" Text="{loc:Tr Stat_Weekdays}" />
+        <TextBlock Grid.Row="1" Margin="0,6,0,8" FontSize="12" Foreground="{DynamicResource SubtleTextBrush}" Text="{loc:Tr Stat_Weekdays}" />
 
         <!-- Haftanın günlerine göre ortalama (mini sütun grafiği, efektsiz) -->
         <ItemsControl Grid.Row="2" Focusable="False" ItemsSource="{Binding WeekdayStats}" ItemsPanel="{StaticResource SingleRowPanel}">

@@ -175,6 +175,9 @@ public partial class MainWindow : Window
             };
         }
 
+        // Windows yüksek kontrast modu: açılışta ve değişince temaya yansır.
+        _viewModel.SetSystemHighContrast(SystemParameters.HighContrast);
+        SystemParameters.StaticPropertyChanged += OnSystemParametersChanged;
         ApplyTheme(Resources, _viewModel.CurrentTheme);
 
         // Loaded yerine: pencere tepside gizli başlasa da veri yüklensin, hatırlatıcılar çalışsın.
@@ -346,6 +349,7 @@ public partial class MainWindow : Window
 
     private void OnClosed(object? sender, EventArgs e)
     {
+        SystemParameters.StaticPropertyChanged -= OnSystemParametersChanged; // statik olay: pencereyi canlı tutmasın
         _mini?.CloseForShutdown();
         _tray?.Dispose();
         Application.Current.Shutdown();
@@ -396,6 +400,14 @@ public partial class MainWindow : Window
             case nameof(MainViewModel.SelectedTask) when _viewModel.SelectedTask is { } selected:
                 ScrollTaskIntoView(selected);
                 break;
+        }
+    }
+
+    private void OnSystemParametersChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SystemParameters.HighContrast))
+        {
+            Dispatcher.InvokeAsync(() => _viewModel.SetSystemHighContrast(SystemParameters.HighContrast));
         }
     }
 
@@ -503,10 +515,14 @@ public partial class MainWindow : Window
         resources["SecondaryColor"] = palette.Secondary;
         resources["YellowBrush"] = Brush(palette.Primary);
         resources["CyanBrush"] = Brush(palette.Secondary);
-        resources["YellowDimBrush"] = Brush(WithAlpha(palette.Primary, 0x55));
-        resources["CyanDimBrush"] = Brush(WithAlpha(palette.Secondary, 0x66));
-        resources["CyanFaintBrush"] = Brush(WithAlpha(palette.Secondary, 0x1F));
-        resources["AxisTextBrush"] = Brush(Mix(palette.Secondary, Color.FromRgb(0x8A, 0x94, 0xA6), 0.55));
+        // Yüksek kontrast: soluk/gri tonlar okunabilirlik için tam renge ya da açık griye çekilir.
+        bool hc = palette.IsHighContrast;
+        resources["YellowDimBrush"] = Brush(hc ? palette.Primary : WithAlpha(palette.Primary, 0x55));
+        resources["CyanDimBrush"] = Brush(hc ? palette.Secondary : WithAlpha(palette.Secondary, 0x66));
+        resources["CyanFaintBrush"] = Brush(WithAlpha(palette.Secondary, hc ? (byte)0x40 : (byte)0x1F));
+        resources["AxisTextBrush"] = Brush(hc ? Colors.White : Mix(palette.Secondary, Color.FromRgb(0x8A, 0x94, 0xA6), 0.55));
+        resources["GreyBrush"] = Brush(hc ? Color.FromRgb(0xC8, 0xC8, 0xC8) : Color.FromRgb(0x4A, 0x55, 0x68));
+        resources["SubtleTextBrush"] = Brush(hc ? Colors.White : Color.FromRgb(0x8A, 0x94, 0xA6));
         resources["PrimaryDeepBrush"] = Brush(Mix(palette.Primary, Colors.Black, 0.9));
     }
 
@@ -516,7 +532,8 @@ public partial class MainWindow : Window
     /// </summary>
     private async void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        bool dialogOpen = _viewModel.Editor is not null || _viewModel.IsSettingsOpen || _viewModel.IsTemplatesOpen || _viewModel.IsDataOpen;
+        bool dialogOpen = _viewModel.Editor is not null || _viewModel.IsSettingsOpen || _viewModel.IsTemplatesOpen || _viewModel.IsDataOpen
+            || _viewModel.IsOnboardingOpen;
         if (dialogOpen)
         {
             return;

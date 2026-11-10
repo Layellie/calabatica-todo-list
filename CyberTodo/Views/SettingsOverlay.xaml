@@ -92,7 +92,7 @@
                                     </Button.Visibility>
                                 </Button>
                             </WrapPanel>
-                            <TextBlock Margin="0,8,0,4" FontSize="12" Foreground="{StaticResource SubtleTextBrush}" Text="{loc:Tr Settings_AutoUpdate}" />
+                            <TextBlock Margin="0,8,0,4" FontSize="12" Foreground="{DynamicResource SubtleTextBrush}" Text="{loc:Tr Settings_AutoUpdate}" />
                             <ListBox Style="{StaticResource ChipList}" ItemsSource="{Binding SoundOptions}" SelectedItem="{Binding SelectedAutoUpdateOption}" />
 
                             <TextBlock Style="{StaticResource FieldLabel}" Text="{loc:Tr Settings_Shortcuts}" />

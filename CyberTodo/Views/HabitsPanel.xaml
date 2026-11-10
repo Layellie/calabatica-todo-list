@@ -31,8 +31,8 @@
                             </StackPanel>
                             <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center" HorizontalAlignment="Right">
                                 <TextBlock x:Name="StreakValue" HorizontalAlignment="Right" FontSize="22" FontWeight="Bold"
-                                           Foreground="{StaticResource GreyBrush}" Text="{Binding StreakText}" />
-                                <TextBlock HorizontalAlignment="Right" FontSize="10" Foreground="{StaticResource SubtleTextBrush}" Text="{loc:Tr Habit_Streak}" />
+                                           Foreground="{DynamicResource GreyBrush}" Text="{Binding StreakText}" />
+                                <TextBlock HorizontalAlignment="Right" FontSize="10" Foreground="{DynamicResource SubtleTextBrush}" Text="{loc:Tr Habit_Streak}" />
                             </StackPanel>
                             <!-- Son 28 gün: yapıldı / kaçırıldı / bugün bekliyor / planlı değil -->
                             <ItemsControl Grid.Row="1" Grid.ColumnSpan="2" Margin="0,6,0,0" Focusable="False" ItemsSource="{Binding Cells}">
@@ -44,7 +44,7 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="{x:Type models:HabitCell}">
                                         <Border x:Name="Cell" Height="12" Margin="1,0" Background="{StaticResource PanelAltBrush}"
-                                                BorderBrush="{StaticResource GreyBrush}" BorderThickness="0" ToolTip="{Binding Tip}" />
+                                                BorderBrush="{DynamicResource GreyBrush}" BorderThickness="0" ToolTip="{Binding Tip}" />
                                         <DataTemplate.Triggers>
                                             <DataTrigger Binding="{Binding State}" Value="Done">
                                                 <Setter TargetName="Cell" Property="Background" Value="{DynamicResource CyanBrush}" />
@@ -70,7 +70,7 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </ScrollViewer>
-        <TextBlock Margin="0,10,0,0" FontSize="13" Foreground="{StaticResource GreyBrush}" TextWrapping="Wrap" Text="{loc:Tr Habits_Empty}">
+        <TextBlock Margin="0,10,0,0" FontSize="13" Foreground="{DynamicResource GreyBrush}" TextWrapping="Wrap" Text="{loc:Tr Habits_Empty}">
             <TextBlock.Style>
                 <Style TargetType="TextBlock">
                     <Setter Property="Visibility" Value="Collapsed" />

@@ -68,7 +68,7 @@
 
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock x:Name="DragHandle" Margin="0,0,8,0" VerticalAlignment="Center" FontSize="16"
-                               Foreground="{StaticResource GreyBrush}" Text="⠿" Cursor="SizeAll" Background="Transparent"
+                               Foreground="{DynamicResource GreyBrush}" Text="⠿" Cursor="SizeAll" Background="Transparent"
                                ToolTip="{loc:Tr Tip_Drag}"
                                PreviewMouseLeftButtonDown="DragSource_MouseDown" MouseMove="DragSource_MouseMove" />
                     <Button x:Name="CheckBtn"
@@ -168,7 +168,7 @@
 
                 <!-- Genişletilmiş ayrıntılar: notlar + alt görevler -->
                 <StackPanel x:Name="DetailsPanel" Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" Margin="4,6,0,0" Visibility="Collapsed">
-                    <TextBlock x:Name="NotesText" Margin="0,2,0,4" FontSize="13" Foreground="{StaticResource SubtleTextBrush}"
+                    <TextBlock x:Name="NotesText" Margin="0,2,0,4" FontSize="13" Foreground="{DynamicResource SubtleTextBrush}"
                                TextWrapping="Wrap" Text="{Binding Notes}" />
                     <ItemsControl Focusable="False" ItemsSource="{Binding Subtasks}" ItemTemplate="{StaticResource SubtaskRowTemplate}" />
                 </StackPanel>
@@ -282,7 +282,7 @@
             </Grid>
             <DataTemplate.Triggers>
                 <DataTrigger Binding="{Binding Intensity}" Value="None">
-                    <Setter TargetName="BarRect" Property="Background" Value="{StaticResource GreyBrush}" />
+                    <Setter TargetName="BarRect" Property="Background" Value="{DynamicResource GreyBrush}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Intensity}" Value="Medium">
                     <Setter TargetName="BarRect" Property="Background" Value="{DynamicResource YellowBrush}" />
@@ -317,7 +317,7 @@
             <DataTemplate.Triggers>
                 <DataTrigger Binding="{Binding IsDone}" Value="True">
                     <Setter TargetName="SubCheck" Property="Visibility" Value="Visible" />
-                    <Setter TargetName="SubTitle" Property="Foreground" Value="{StaticResource GreyBrush}" />
+                    <Setter TargetName="SubTitle" Property="Foreground" Value="{DynamicResource GreyBrush}" />
                     <Setter TargetName="SubTitle" Property="TextDecorations" Value="Strikethrough" />
                 </DataTrigger>
             </DataTemplate.Triggers>
@@ -485,6 +485,7 @@
 
                     <!-- Başlıkla aynı dikey eksende (simetri) -->
                     <StackPanel Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Orientation="Horizontal">
+                        <Button Style="{StaticResource CaptionButton}" Content="?" AutomationProperties.Name="{loc:Tr Tip_Help}" ToolTip="{loc:Tr Tip_Help}" Command="{Binding OpenOnboardingCommand}" />
                         <Button Style="{StaticResource CaptionButton}" Content="⇲" AutomationProperties.Name="{loc:Tr Tip_Mini}" ToolTip="{loc:Tr Tip_Mini}" Command="{Binding ToggleMiniModeCommand}" />
                         <Button Style="{StaticResource CaptionButton}" Content="⚙" AutomationProperties.Name="{loc:Tr Tip_Settings}" ToolTip="{loc:Tr Tip_Settings}" Command="{Binding OpenSettingsCommand}" />
                         <Button Style="{StaticResource CaptionButton}" Content="─" AutomationProperties.Name="{loc:Tr Tip_Minimize}" ToolTip="{loc:Tr Tip_Minimize}" Click="Minimize_Click" />
@@ -521,7 +522,7 @@
                             <TextBlock FontSize="28" FontWeight="Bold" Foreground="{StaticResource WhiteBrush}" Text="{loc:Tr Tasks_Header}" />
                             <Grid Margin="0,8,0,0">
                                 <Rectangle Height="1" Fill="{StaticResource DividerBrush}" />
-                                <Rectangle Width="48" Height="3" HorizontalAlignment="Left" Fill="{StaticResource SubtleTextBrush}" />
+                                <Rectangle Width="48" Height="3" HorizontalAlignment="Left" Fill="{DynamicResource SubtleTextBrush}" />
                             </Grid>
                         </StackPanel>
 
@@ -546,9 +547,9 @@
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
 
-                                <TextBlock Margin="0,0,0,5" FontSize="12" Foreground="{StaticResource SubtleTextBrush}" Text="{loc:Tr Add_TitleLabel}" />
-                                <TextBlock Grid.Column="1" Margin="12,0,0,5" FontSize="12" Foreground="{StaticResource SubtleTextBrush}" Text="{loc:Tr Add_CategoryLabel}" />
-                                <TextBlock Grid.Column="2" Margin="12,0,0,5" FontSize="12" Foreground="{StaticResource SubtleTextBrush}" Text="{loc:Tr Add_HoursLabel}" />
+                                <TextBlock Margin="0,0,0,5" FontSize="12" Foreground="{DynamicResource SubtleTextBrush}" Text="{loc:Tr Add_TitleLabel}" />
+                                <TextBlock Grid.Column="1" Margin="12,0,0,5" FontSize="12" Foreground="{DynamicResource SubtleTextBrush}" Text="{loc:Tr Add_CategoryLabel}" />
+                                <TextBlock Grid.Column="2" Margin="12,0,0,5" FontSize="12" Foreground="{DynamicResource SubtleTextBrush}" Text="{loc:Tr Add_HoursLabel}" />
 
                                 <TextBox x:Name="TaskTitleBox" Grid.Row="1" Style="{StaticResource NeonTextBox}" MaxLength="200"
                                          Tag="{loc:Tr Add_TitleHint}" ToolTip="{loc:Tr QuickAdd_Help}"
@@ -603,11 +604,12 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
                             <TextBox x:Name="SearchBox" Style="{StaticResource NeonTextBox}" Tag="{loc:Tr Search_Hint}" VerticalAlignment="Top"
                                      Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
                             <StackPanel Grid.Column="1" Margin="14,4,0,0" Orientation="Horizontal" VerticalAlignment="Top">
-                                <TextBlock Margin="0,6,10,0" FontSize="12" Foreground="{StaticResource SubtleTextBrush}" Text="{loc:Tr Sort_Label}" />
+                                <TextBlock Margin="0,6,10,0" FontSize="12" Foreground="{DynamicResource SubtleTextBrush}" Text="{loc:Tr Sort_Label}" />
                                 <ListBox Style="{StaticResource ChipList}" ItemsSource="{Binding SortOptions}" SelectedItem="{Binding SelectedSortOption}" />
                             </StackPanel>
                             <!-- Akıllı listeler: TÜMÜ / BUGÜN / YAKLAŞAN / GECİKMİŞ (sayaçlı) -->
@@ -628,6 +630,40 @@
                                     </Binding>
                                 </ListBox.Visibility>
                             </ListBox>
+
+                            <!-- Kayıtlı görünümler: ★ kaydet + çipler (ad otomatik: "#iş · BUGÜN · “rapor”") -->
+                            <WrapPanel Grid.Row="3" Grid.ColumnSpan="2" Margin="0,4,0,0">
+                                <Button Margin="0,0,8,6" Style="{StaticResource SmallButton}" Content="{loc:Tr Filter_Save}"
+                                        ToolTip="{loc:Tr Tip_SaveFilter}" AutomationProperties.Name="{loc:Tr Tip_SaveFilter}"
+                                        ToolTipService.ShowOnDisabled="True" Command="{Binding SaveCurrentFilterCommand}" />
+                                <ItemsControl Focusable="False" ItemsSource="{Binding SavedFilters}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type models:SavedFilter}">
+                                            <StackPanel Margin="0,0,8,6" Orientation="Horizontal">
+                                                <Button x:Name="FilterChip" Style="{StaticResource SmallButton}" Margin="0" Content="{Binding Name}"
+                                                        ToolTip="{loc:Tr Tip_ApplyFilter}" AutomationProperties.Name="{Binding Name}"
+                                                        Command="{Binding DataContext.ApplySavedFilterCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}" />
+                                                <Button Style="{StaticResource IconButton}" Width="20" Content="✕" FontSize="11"
+                                                        ToolTip="{loc:Tr Tip_DeleteFilter}" AutomationProperties.Name="{loc:Tr Tip_DeleteFilter}"
+                                                        Command="{Binding DataContext.DeleteSavedFilterCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}" />
+                                            </StackPanel>
+                                            <DataTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                    <Setter TargetName="FilterChip" Property="Background" Value="{DynamicResource CyanBrush}" />
+                                                    <Setter TargetName="FilterChip" Property="Foreground" Value="{StaticResource BlackBrush}" />
+                                                </DataTrigger>
+                                            </DataTemplate.Triggers>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </WrapPanel>
                         </Grid>
 
                         <!-- Aktif görevler -->
@@ -636,7 +672,7 @@
                             <ItemsControl x:Name="ActiveList" Style="{StaticResource VirtualList}" Focusable="True" FocusVisualStyle="{x:Null}"
                                           ItemsSource="{Binding ActiveView}" ItemTemplate="{StaticResource ActiveTaskTemplate}"
                                           AllowDrop="True" DragOver="ListEnd_DragOver" Drop="ListEnd_Drop" />
-                            <TextBlock Margin="46,6,0,0" FontSize="15" Foreground="{StaticResource GreyBrush}" Text="{loc:Tr Empty_Active}">
+                            <TextBlock Margin="46,6,0,0" FontSize="15" Foreground="{DynamicResource GreyBrush}" Text="{loc:Tr Empty_Active}">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="Visibility" Value="Collapsed" />
@@ -652,7 +688,7 @@
 
                         <!-- Tamamlananlar -->
                         <StackPanel Grid.Row="4" Margin="0,10,0,12">
-                            <TextBlock FontSize="24" FontWeight="SemiBold" Foreground="{StaticResource GreyBrush}">
+                            <TextBlock FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource GreyBrush}">
                                 <Run Text="{loc:Tr Completed_Header}" /><Run Text="{Binding CompletedTasks.Count, Mode=OneWay, StringFormat=' [{0}]'}" />
                             </TextBlock>
                             <Rectangle Height="1" Margin="0,8,0,0" Fill="{StaticResource DividerBrush}" />
@@ -696,7 +732,7 @@
                                 <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Focusable="False" RenderOptions.EdgeMode="Aliased">
                                     <ItemsControl ItemsSource="{Binding SelectedDay.Entries}" ItemTemplate="{StaticResource LogEntryTemplate}" Focusable="False" RenderOptions.EdgeMode="Unspecified" />
                                 </ScrollViewer>
-                                <TextBlock Grid.Row="2" FontSize="14" Foreground="{StaticResource GreyBrush}" Text="{loc:Tr Empty_Log}">
+                                <TextBlock Grid.Row="2" FontSize="14" Foreground="{DynamicResource GreyBrush}" Text="{loc:Tr Empty_Log}">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="Visibility" Value="Collapsed" />
@@ -1023,7 +1059,7 @@
                                         </Binding.Converter>
                                     </Binding>
                                 </StackPanel.Visibility>
-                                <TextBlock Margin="0,4,0,6" FontSize="12" Foreground="{StaticResource SubtleTextBrush}" Text="{loc:Tr Rec_DaysLabel}" />
+                                <TextBlock Margin="0,4,0,6" FontSize="12" Foreground="{DynamicResource SubtleTextBrush}" Text="{loc:Tr Rec_DaysLabel}" />
                                 <ItemsControl Focusable="False" ItemsSource="{Binding DayToggles}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
@@ -1044,7 +1080,7 @@
                                     <Button Style="{StaticResource SmallButton}" Content="{loc:Tr Rec_AllDays}" Command="{Binding SelectAllDaysCommand}" />
                                 </WrapPanel>
                             </StackPanel>
-                            <TextBlock Margin="0,4,0,0" FontSize="12" FontStyle="Italic" Foreground="{StaticResource GreyBrush}" TextWrapping="Wrap" Text="{loc:Tr Rec_Note}">
+                            <TextBlock Margin="0,4,0,0" FontSize="12" FontStyle="Italic" Foreground="{DynamicResource GreyBrush}" TextWrapping="Wrap" Text="{loc:Tr Rec_Note}">
                                 <TextBlock.Visibility>
                                     <Binding Path="IsAnyRecurrence">
                                         <Binding.Converter>
@@ -1056,7 +1092,7 @@
 
                             <TextBlock Style="{StaticResource FieldLabel}" Text="{loc:Tr Field_Reminder}" />
                             <ListBox Style="{StaticResource ChipList}" ItemsSource="{Binding ReminderOptions}" SelectedItem="{Binding SelectedReminder}" />
-                            <TextBlock Margin="0,2,0,0" FontSize="12" FontStyle="Italic" Foreground="{StaticResource GreyBrush}" TextWrapping="Wrap" Text="{loc:Tr Edit_ReminderNote}" />
+                            <TextBlock Margin="0,2,0,0" FontSize="12" FontStyle="Italic" Foreground="{DynamicResource GreyBrush}" TextWrapping="Wrap" Text="{loc:Tr Edit_ReminderNote}" />
 
                             <TextBlock Style="{StaticResource FieldLabel}" Text="{loc:Tr Field_Subtasks}" />
                             <ItemsControl Focusable="False" ItemsSource="{Binding Subtasks}" ItemTemplate="{StaticResource EditorSubtaskTemplate}" />
@@ -1114,5 +1150,16 @@
                 </Binding>
             </views:DataOverlay.Visibility>
         </views:DataOverlay>
+
+        <!-- ═════════════ İLK AÇILIŞ REHBERİ ═════════════ -->
+        <views:OnboardingOverlay>
+            <views:OnboardingOverlay.Visibility>
+                <Binding Path="IsOnboardingOpen">
+                    <Binding.Converter>
+                        <BooleanToVisibilityConverter />
+                    </Binding.Converter>
+                </Binding>
+            </views:OnboardingOverlay.Visibility>
+        </views:OnboardingOverlay>
     </Grid>
 </Window>

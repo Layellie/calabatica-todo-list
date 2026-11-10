@@ -92,8 +92,8 @@
                         </Trigger>
                         <!-- Devre dışı: saydamlık yerine gri renk (Opacity ara katmanı kesirli ölçekte iz bırakıyordu) -->
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter Property="Foreground" Value="{StaticResource GreyBrush}" />
-                            <Setter Property="BorderBrush" Value="{StaticResource GreyBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource GreyBrush}" />
+                            <Setter Property="BorderBrush" Value="{DynamicResource GreyBrush}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -188,7 +188,7 @@
         <Setter Property="Height" Value="26" />
         <Setter Property="Margin" Value="4,0,0,0" />
         <Setter Property="FontSize" Value="15" />
-        <Setter Property="Foreground" Value="{StaticResource SubtleTextBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource SubtleTextBrush}" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Template">
@@ -226,10 +226,10 @@
         Tetikleyici sırası önemli: en son tanımlanan kazanır → ikon hover'ı satır hover'ını ezer.
     -->
     <Style x:Key="RowIconButton" TargetType="Button" BasedOn="{StaticResource IconButton}">
-        <Setter Property="Foreground" Value="{StaticResource GreyBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource GreyBrush}" />
         <Style.Triggers>
             <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Grid}}" Value="True">
-                <Setter Property="Foreground" Value="{StaticResource SubtleTextBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource SubtleTextBrush}" />
             </DataTrigger>
             <Trigger Property="IsMouseOver" Value="True">
                 <Setter Property="Foreground" Value="{DynamicResource CyanBrush}" />
@@ -273,7 +273,7 @@
     <Style x:Key="DoneCheckButton" TargetType="Button">
         <Setter Property="Width" Value="28" />
         <Setter Property="Height" Value="28" />
-        <Setter Property="BorderBrush" Value="{StaticResource GreyBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource GreyBrush}" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Template">
@@ -375,7 +375,7 @@
                             <TextBlock x:Name="Hint"
                                        Margin="2,0,0,0"
                                        VerticalAlignment="Center"
-                                       Foreground="{StaticResource GreyBrush}"
+                                       Foreground="{DynamicResource GreyBrush}"
                                        FontStyle="Italic"
                                        IsHitTestVisible="False"
                                        TextTrimming="CharacterEllipsis"
@@ -394,7 +394,7 @@
                             <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource YellowBrush}" />
                         </Trigger>
                         <Trigger Property="IsReadOnly" Value="True">
-                            <Setter Property="Foreground" Value="{StaticResource SubtleTextBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource SubtleTextBrush}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -455,10 +455,10 @@
             <local:ChamferFrame x:Name="TileFrame" Fill="{StaticResource PanelAltBrush}" Stroke="{DynamicResource CyanDimBrush}"
                                 StrokeThickness="1" Chamfer="8" Corners="TopLeft, BottomRight" />
             <StackPanel Margin="12,8,10,10">
-                <TextBlock FontSize="11" Foreground="{StaticResource SubtleTextBrush}" TextTrimming="CharacterEllipsis" Text="{Binding Label}" />
+                <TextBlock FontSize="11" Foreground="{DynamicResource SubtleTextBrush}" TextTrimming="CharacterEllipsis" Text="{Binding Label}" />
                 <TextBlock x:Name="TileValue" Margin="0,4,0,2" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource CyanBrush}"
                            TextTrimming="CharacterEllipsis" Text="{Binding Value}" />
-                <TextBlock FontSize="11" Foreground="{StaticResource GreyBrush}" TextTrimming="CharacterEllipsis" Text="{Binding Sub}" />
+                <TextBlock FontSize="11" Foreground="{DynamicResource GreyBrush}" TextTrimming="CharacterEllipsis" Text="{Binding Sub}" />
             </StackPanel>
         </Grid>
         <DataTemplate.Triggers>
@@ -604,7 +604,7 @@
 
     <Style x:Key="FieldLabel" TargetType="TextBlock">
         <Setter Property="FontSize" Value="12" />
-        <Setter Property="Foreground" Value="{StaticResource SubtleTextBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource SubtleTextBrush}" />
         <Setter Property="Margin" Value="0,12,0,5" />
     </Style>
 
@@ -634,7 +634,7 @@
         <DataTemplate.Triggers>
             <DataTrigger Binding="{Binding IsDone}" Value="True">
                 <Setter TargetName="SubCheck" Property="Visibility" Value="Visible" />
-                <Setter TargetName="SubTitle" Property="Foreground" Value="{StaticResource GreyBrush}" />
+                <Setter TargetName="SubTitle" Property="Foreground" Value="{DynamicResource GreyBrush}" />
                 <Setter TargetName="SubTitle" Property="TextDecorations" Value="Strikethrough" />
             </DataTrigger>
         </DataTemplate.Triggers>
@@ -657,7 +657,7 @@
             <TextBlock Grid.Column="1"
                        VerticalAlignment="Center"
                        FontSize="18"
-                       Foreground="{StaticResource GreyBrush}"
+                       Foreground="{DynamicResource GreyBrush}"
                        TextDecorations="Strikethrough"
                        TextTrimming="CharacterEllipsis">
                 <Run Text="{Binding Code, Mode=OneWay}" /><Run Text=" " /><Run Text="{Binding Title, Mode=OneWay}" />
@@ -666,7 +666,7 @@
                        Margin="12,0,0,0"
                        VerticalAlignment="Center"
                        FontSize="13"
-                       Foreground="{StaticResource GreyBrush}"
+                       Foreground="{DynamicResource GreyBrush}"
                        Text="{Binding CompletedAt, StringFormat='[✓ {0:dd.MM HH:mm}]'}" />
             <Button x:Name="DeleteBtn" Grid.Column="3" Margin="8,0,0,0"
                     Style="{StaticResource RowDeleteButton}" Content="✕" AutomationProperties.Name="{loc:Tr Tip_Delete}" ToolTip="{loc:Tr Tip_Delete}"

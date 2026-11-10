@@ -164,7 +164,7 @@
             </StackPanel>
 
             <!-- Boşta: ipucu -->
-            <TextBlock FontSize="12" Foreground="{StaticResource GreyBrush}" Text="{loc:Tr Mini_Idle}">
+            <TextBlock FontSize="12" Foreground="{DynamicResource GreyBrush}" Text="{loc:Tr Mini_Idle}">
                 <TextBlock.Style>
                     <Style TargetType="TextBlock">
                         <Style.Triggers>
@@ -179,7 +179,7 @@
                 </TextBlock.Style>
             </TextBlock>
 
-            <TextBlock Margin="0,14,0,6" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource SubtleTextBrush}" Text="{loc:Tr Mini_Today}" />
+            <TextBlock Margin="0,14,0,6" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SubtleTextBrush}" Text="{loc:Tr Mini_Today}" />
 
             <ScrollViewer MaxHeight="320" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
                           Focusable="False" RenderOptions.EdgeMode="Aliased">
@@ -232,7 +232,7 @@
                 </ItemsControl>
             </ScrollViewer>
 
-            <TextBlock FontSize="12" Foreground="{StaticResource GreyBrush}" Text="{loc:Tr Mini_Empty}">
+            <TextBlock FontSize="12" Foreground="{DynamicResource GreyBrush}" Text="{loc:Tr Mini_Empty}">
                 <TextBlock.Style>
                     <Style TargetType="TextBlock">
                         <Setter Property="Visibility" Value="Collapsed" />

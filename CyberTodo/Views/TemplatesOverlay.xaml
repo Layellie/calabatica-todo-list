@@ -19,7 +19,7 @@
                 <StackPanel Margin="28,22,28,24">
                     <TextBlock FontSize="22" FontWeight="Bold" Foreground="{DynamicResource YellowBrush}" Text="{loc:Tr Templates_Button}" />
                     <Rectangle Height="1" Margin="0,10,0,10" Fill="{DynamicResource YellowDimBrush}" />
-                    <TextBlock FontSize="12" FontStyle="Italic" Foreground="{StaticResource GreyBrush}" TextWrapping="Wrap" Text="{loc:Tr Template_Help}" />
+                    <TextBlock FontSize="12" FontStyle="Italic" Foreground="{DynamicResource GreyBrush}" TextWrapping="Wrap" Text="{loc:Tr Template_Help}" />
 
                     <Grid Margin="0,12,0,0">
                         <Grid.InputBindings>
@@ -47,7 +47,7 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock VerticalAlignment="Center" FontSize="16" Foreground="{DynamicResource CyanBrush}" TextTrimming="CharacterEllipsis">
-                                            <Run Text="⧉ " /><Run Text="{Binding Name, Mode=OneWay}" /><Run Text="  " /><Run Foreground="{StaticResource GreyBrush}" FontSize="12" Text="{Binding Items.Count, Mode=OneWay, StringFormat='[{0}]'}" />
+                                            <Run Text="⧉ " /><Run Text="{Binding Name, Mode=OneWay}" /><Run Text="  " /><Run Foreground="{DynamicResource GreyBrush}" FontSize="12" Text="{Binding Items.Count, Mode=OneWay, StringFormat='[{0}]'}" />
                                         </TextBlock>
                                         <Button Grid.Column="1" Style="{StaticResource SmallButton}" Content="{loc:Tr Template_Apply}"
                                                 Command="{Binding DataContext.ApplyTemplateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -60,7 +60,7 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </ScrollViewer>
-                    <TextBlock Margin="0,4,0,0" FontSize="13" Foreground="{StaticResource GreyBrush}" Text="{loc:Tr Templates_Empty}">
+                    <TextBlock Margin="0,4,0,0" FontSize="13" Foreground="{DynamicResource GreyBrush}" Text="{loc:Tr Templates_Empty}">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
                                 <Setter Property="Visibility" Value="Collapsed" />

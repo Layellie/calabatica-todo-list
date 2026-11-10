@@ -177,6 +177,7 @@ public static class RuntimeInstaller
         }
 
         [DllImport("wintrust.dll", ExactSpelling = true, CharSet = CharSet.Unicode)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         private static extern int WinVerifyTrust(IntPtr hwnd, [MarshalAs(UnmanagedType.LPStruct)] Guid actionId, IntPtr data);
 
         /// <returns>0 = güvenilir; diğerleri HRESULT (ör. 0x800B0100 imza yok).</returns>

@@ -193,7 +193,7 @@ public static class QuickAddParser
             }
 
             // Saat yalnızca ":" ile: "@1.12" 1 Aralık'tır, 01:12 değil.
-            if (token.Contains(':') && InputParsing.TryParseTime(token, out var parsedTime))
+            if (token.Contains(':', StringComparison.Ordinal) && InputParsing.TryParseTime(token, out var parsedTime))
             {
                 time = parsedTime;
                 return true;

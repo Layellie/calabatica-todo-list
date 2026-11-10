@@ -18,3 +18,22 @@ indent_size = 2
 # Windows PowerShell 5.1, BOM'suz dosyayı ANSI sanır (Türkçe karakterler bozulur) → BOM şart.
 [*.ps1]
 charset = utf-8-bom
+
+# ── Analyzer kuralları ──────────────────────────────────────────────────────────
+# Aşağıdakiler ihlalde uyarıdır; CI uygulamayı -warnaserror ile derlediği için derlemeyi kırar.
+# Bilerek AÇILMAYANLAR (en sıkı modda çok gürültü / yanlış yönlendirir):
+#   CA1822  XAML'e bağlanan ViewModel özellikleri örnek üyesi olmak zorunda (static olursa binding çalışmaz).
+#   CA1309  Kategori/arama karşılaştırması bilerek kültür duyarlı (Türkçe "iş" ↔ "İŞ"); Ordinal bunu bozar.
+#   CA2007  UI uygulamasında await sonrası UI thread'ine dönmek istenir (ConfigureAwait(false) yanlış olur).
+#   CA1515/CA1062/CA1002/CA2227  kütüphane API tasarımı kuralları; bu bir uygulama.
+[*.cs]
+dotnet_diagnostic.CA5392.severity = warning   # P/Invoke: DefaultDllImportSearchPaths (DLL yerleştirme)
+dotnet_diagnostic.CA1305.severity = warning   # Parse/Format: IFormatProvider belirt
+dotnet_diagnostic.CA1307.severity = warning   # string işlemlerinde StringComparison belirt
+dotnet_diagnostic.CA2000.severity = warning   # IDisposable sahipliği
+dotnet_diagnostic.CA2213.severity = warning   # Dispose edilmeyen IDisposable alan
+dotnet_diagnostic.CA1031.severity = warning   # genel catch (gerekçeli sınırlar SuppressMessage ile)
+
+# Test çalıştırıcısı ve kurulum projesi bu kurallardan muaf (CI'da zaten -warnaserror yok; gürültü olmasın).
+[{tests/**.cs,Installer/**.cs}]
+dotnet_analyzer_diagnostic.severity = none

@@ -69,7 +69,7 @@ public static class DataExporter
     private static string Quote(string value, char separator)
     {
         bool needs = value.IndexOfAny([separator, '"', '\r', '\n']) >= 0 || value.StartsWith(' ') || value.EndsWith(' ');
-        return needs ? "\"" + value.Replace("\"", "\"\"") + "\"" : value;
+        return needs ? "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"" : value;
     }
 
     // ───────────────────────────── iCalendar ─────────────────────────────

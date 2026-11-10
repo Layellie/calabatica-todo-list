@@ -1103,6 +1103,16 @@ var thread = new Thread(() =>
 
             Check(File.ReadAllText(preLockPath) == lockedContent, "preload: locked file content was never overwritten");
 
+            // ══════════════ Sürüm etiketi sağlamlığı ══════════════
+            bool versionThrew = false; bool versionParsed = true;
+            try { versionParsed = UpdateService.TryParseVersion("v\u0661.\u0662", out _); } // Arapça-Hint rakamlar: regex \d eşler, int.Parse reddeder
+            catch (FormatException) { versionThrew = true; }
+            Check(!versionThrew && !versionParsed, "update: non-ASCII digits in a release tag are rejected without throwing");
+            Check(UpdateService.TryParseVersion("v1.2.3", out var v123) && v123 == new Version(1, 2, 3)
+                && UpdateService.TryParseVersion("2.1", out var v21) && v21 == new Version(2, 1, 0)
+                && !UpdateService.TryParseVersion("v1.2.3-beta", out _) && !UpdateService.TryParseVersion("1.2.3.4", out _) && !UpdateService.TryParseVersion("", out _)
+                && !UpdateService.TryParseVersion("v123456", out _), "update: normal tags still parse, malformed ones are rejected");
+
             // ══════════════ Log ══════════════
             Check(File.Exists(Path.Combine(dir, "logs", "app.log")) && File.ReadAllText(Path.Combine(dir, "logs", "app.log")).Contains("ERROR [MainViewModel]"),
                 "log: caught errors (e.g. invalid import) are written to app.log");

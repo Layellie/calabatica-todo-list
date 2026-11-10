@@ -52,6 +52,63 @@ public sealed class StorageService
 
     public string FilePath { get; }
 
+    /// <summary>Uygulamanın kayıt biçimiyle (girintili, okunabilir Türkçe) JSON üretir. Yedek ve dışa aktarma da bunu kullanır.</summary>
+    public static byte[] Serialize(CyberData data)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        return JsonSerializer.SerializeToUtf8Bytes(data, s_options);
+    }
+
+    /// <summary>
+    /// Başka bir dosyayı (yedek / içe aktarma) okur ve normalize eder. Ana dosyadan farklı olarak bozuk dosyaya
+    /// dokunmaz: geçersiz JSON <see cref="InvalidDataException"/> olarak fırlatılır.
+    /// </summary>
+    /// <param name="maxBytes">Kötü niyetli/yanlış seçilmiş dev dosyaya karşı sınır.</param>
+    public static async Task<CyberData> ReadFileAsync(string path, long maxBytes = 64L * 1024 * 1024, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        var info = new FileInfo(path);
+        if (!info.Exists)
+        {
+            throw new FileNotFoundException(null, path);
+        }
+
+        if (info.Length > maxBytes)
+        {
+            throw new InvalidDataException($"File too large ({info.Length / 1024 / 1024} MB).");
+        }
+
+        CyberData? data;
+        try
+        {
+            await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            data = await JsonSerializer.DeserializeAsync<CyberData>(stream, s_options, cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidDataException(ex.Message, ex);
+        }
+
+        if (data is null)
+        {
+            throw new InvalidDataException("Empty JSON.");
+        }
+
+        Normalize(data);
+        return data;
+    }
+
+    /// <summary>Hedefe atomik yazar (.tmp → Move); yarım dosya kalmaz.</summary>
+    public static async Task WriteAtomicAsync(string path, byte[] payload, CancellationToken cancellationToken = default)
+    {
+        string directory = Path.GetDirectoryName(Path.GetFullPath(path))
+            ?? throw new InvalidOperationException($"Invalid path: {path}");
+        Directory.CreateDirectory(directory);
+        string temp = path + ".tmp";
+        await File.WriteAllBytesAsync(temp, payload, cancellationToken).ConfigureAwait(false);
+        File.Move(temp, path, overwrite: true);
+    }
+
     /// <summary>
     /// Dosyayı yükler. Dosya yoksa boş veriyle başlar (örnek veri yok). JSON bozuksa dosyayı silmez,
     /// yedek adla taşır ve boş veriyle devam eder. I/O hataları (kilitli dosya, yetki) çağırana fırlatılır.
@@ -180,6 +237,14 @@ public sealed class StorageService
         data.Tasks ??= [];
         data.Days ??= [];
         data.Templates ??= [];
+        data.FocusSessions ??= [];
+        data.FocusSessions.RemoveAll(static s => s is null || s.Minutes <= 0);
+        foreach (var session in data.FocusSessions)
+        {
+            session.Minutes = Math.Min(session.Minutes, 24 * 60);
+            session.Title ??= string.Empty;
+        }
+
         data.Templates.RemoveAll(static t => t is null || t.Items is null);
         foreach (var template in data.Templates)
         {

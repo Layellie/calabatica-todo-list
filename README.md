@@ -32,19 +32,22 @@
 - Search, smart lists (Today / Upcoming / Overdue), category filters
 - Sort by creation, due date or priority, or reorder by **drag and drop**
 - Templates: save the visible tasks as a reusable set
-- Undo delete (`Ctrl+Z`)
+- Undo the last action (add, complete, reopen, edit, move, delete, apply template) with `Ctrl+Z` or the ↶ button
 
 **Focus and insights**
 - Built-in focus (Pomodoro) timer per task; tracked time goes into your daily activity
 - Activity log and a 30 / 7-day chart (hover a bar to see that day)
 - Stats: current and longest streak, weekly comparison, peak hour, average by weekday
+- Focus stats: time per category and per task over the last 7 or 30 days
 - Month calendar with recurring tasks projected onto future days
 
 **App**
 - Turkish and English interface
 - Five color themes (Neon, Synthwave, Matrix, Amber, Arctic) and three UI scales
 - Runs in the system tray with Windows notifications; optional start with Windows
-- Checks GitHub Releases for new versions
+- Updates itself from GitHub Releases: downloads the new version, verifies its SHA256 checksum and restarts
+- Daily automatic backups (last 7 kept), one-click restore, JSON / CSV (Excel) export and JSON import
+- Export tasks with due dates to Google Calendar, Outlook or Apple Calendar (`.ics`)
 - Data stays on your computer (`%LOCALAPPDATA%\CyberTodo\cyber_data.json`), no account and no telemetry
 
 | Calendar | Stats |
@@ -77,7 +80,7 @@ Turkish words work too (`@yarın`, `*haftalık`, `*pzt,çar,cum`, …).
 |---|---|
 | `Ctrl+N` | Focus the new task box |
 | `Ctrl+F` | Search |
-| `Ctrl+Z` | Undo delete |
+| `Ctrl+Z` | Undo last action |
 | `Ctrl+,` | Settings |
 | `Enter` | Add / save |
 | `Esc` | Close dialog / clear search |
@@ -133,6 +136,8 @@ build-installer.ps1     Builds the app and the installer
 - Task lists are virtualized: 2,500 tasks load in about 1 second
 - Saves are coalesced (400 ms), serialized on the UI thread and written atomically (temp file + move);
   pending changes are flushed on exit and when Windows signs out
+- Backups are written from an in-memory snapshot to `backups\` next to the data file; restore and import
+  always back up the current state first
 
 ## License
 

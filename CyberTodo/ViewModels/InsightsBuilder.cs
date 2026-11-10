@@ -142,6 +142,80 @@ public static class InsightsBuilder
     private static bool HasCompletion(IReadOnlyDictionary<DateOnly, DayActivity> days, DateOnly date) =>
         days.TryGetValue(date, out var day) && day.CompletedCount > 0;
 
+    // ───────────────────────────── Odak ─────────────────────────────
+
+    public const int FocusTopCount = 6;
+
+    /// <summary>
+    /// Son <paramref name="rangeDays"/> gündeki odak oturumları: toplam / oturum / önceki dönem kutucukları,
+    /// kategori ve görev bazında en çok odaklanılan ilk <see cref="FocusTopCount"/> satır.
+    /// Oturum, başladığı güne sayılır. Kategori karşılaştırması büyük/küçük harf duyarsız.
+    /// </summary>
+    public static (List<StatTile> Tiles, List<FocusSlice> ByCategory, List<FocusSlice> ByTask) BuildFocus(
+        IReadOnlyCollection<FocusSession> sessions,
+        DateOnly today,
+        int rangeDays,
+        Localizer loc,
+        Func<int, string> formatMinutes)
+    {
+        ArgumentNullException.ThrowIfNull(sessions);
+        rangeDays = Math.Max(1, rangeDays);
+        var from = today.AddDays(-(rangeDays - 1));
+        var previousFrom = from.AddDays(-rangeDays);
+
+        var current = sessions.Where(s => DateOnly.FromDateTime(s.Start) is var d && d >= from && d <= today).ToList();
+        int previousTotal = sessions
+            .Where(s => DateOnly.FromDateTime(s.Start) is var d && d >= previousFrom && d < from)
+            .Sum(static s => s.Minutes);
+
+        int total = current.Sum(static s => s.Minutes);
+        string Minutes(int m) => m > 0 ? formatMinutes(m) : loc["Stat_None"];
+
+        var byCategory = current
+            .GroupBy(static s => s.Category?.Trim() ?? string.Empty, StringComparer.CurrentCultureIgnoreCase)
+            .Select(g => (Label: g.Key.Length == 0 ? loc["Focus_NoCategory"] : "#" + g.Key, Minutes: g.Sum(static s => s.Minutes)))
+            .OrderByDescending(static x => x.Minutes)
+            .ThenBy(static x => x.Label, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+        // Görev başlığı: en son oturumdaki hâli (sonradan yeniden adlandırılmışsa güncel ada yakın).
+        var byTask = current
+            .GroupBy(static s => s.TaskId)
+            .Select(g =>
+            {
+                var latest = g.MaxBy(static s => s.Start)!;
+                return (Label: $"#{latest.TaskNumber:000} {latest.Title}", Minutes: g.Sum(static s => s.Minutes));
+            })
+            .OrderByDescending(static x => x.Minutes)
+            .ThenBy(static x => x.Label, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+        var top = byCategory.FirstOrDefault();
+        var tiles = new List<StatTile>
+        {
+            new(loc.Format("Focus_Total", rangeDays), Minutes(total), loc.Format("Focus_Previous", Minutes(previousTotal)), Highlight: total > 0),
+            new(loc["Focus_Sessions"], current.Count.ToString(loc.Culture),
+                current.Count > 0 ? loc.Format("Focus_Average", formatMinutes((int)Math.Round((double)total / current.Count))) : string.Empty),
+            new(loc["Focus_TopCategory"], top.Minutes > 0 ? top.Label : loc["Stat_None"], top.Minutes > 0 ? formatMinutes(top.Minutes) : string.Empty),
+        };
+
+        return (tiles, ToSlices(byCategory, formatMinutes), ToSlices(byTask, formatMinutes));
+    }
+
+    private static List<FocusSlice> ToSlices(List<(string Label, int Minutes)> rows, Func<int, string> formatMinutes)
+    {
+        int max = rows.Count == 0 ? 0 : rows[0].Minutes;
+        return
+        [
+            .. rows.Take(FocusTopCount).Select((r, i) =>
+            {
+                double ratio = max <= 0 ? 0 : Math.Clamp((double)r.Minutes / max, 0.02, 1);
+                return new FocusSlice(r.Label, formatMinutes(r.Minutes),
+                    new GridLength(ratio, GridUnitType.Star), new GridLength(1 - ratio, GridUnitType.Star), IsTop: i == 0);
+            }),
+        ];
+    }
+
     // ───────────────────────────── Takvim ─────────────────────────────
 
     /// <summary>Ayın ilk gününü içeren haftanın pazartesisi.</summary>

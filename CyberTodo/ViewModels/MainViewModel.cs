@@ -55,10 +55,20 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>Kategori filtresindeki "TÜMÜ" seçeneği (Value=null) — tek örnek, dil değişince etiketi güncellenir.</summary>
     private static readonly LocalizedOption<string?> s_allCategories = new(null, "Filter_All");
 
+    private const int MaxUndo = 30;
+    private const int MaxFocusSessions = 20_000; // ~yıllarca günde birkaç oturum; dosya şişmesin
+
     private readonly Localizer _loc = Localizer.Instance;
     private readonly StorageService _storage;
     private readonly UpdateService _updates;
     private readonly IStartupRegistration _startup;
+    private readonly BackupService _backups;
+    private readonly IFileDialogs _dialogs;
+    private readonly UpdateInstaller? _installer;
+    private readonly List<UndoEntry> _undoStack = [];
+    private readonly List<FocusSession> _focusSessions = [];
+    private ReleaseInfo? _latestRelease;
+    private Version? _toastedUpdateVersion;
     private DateOnly? _calendarSelectedDate;
     private readonly Dictionary<DateOnly, DayActivity> _daysByDate = new();
     private readonly DispatcherTimer _clock;
@@ -85,11 +95,21 @@ public sealed partial class MainViewModel : ObservableObject
 
     /// <param name="updates">null → depo ayarsız (ağa çıkmaz); testler için.</param>
     /// <param name="startup">null → bellekte (kayıt defterine dokunmaz); testler için.</param>
-    public MainViewModel(StorageService storage, UpdateService? updates = null, IStartupRegistration? startup = null)
+    /// <param name="dialogs">null → hiçbir dosya seçilmez/onaylanmaz; testler sahte verir.</param>
+    /// <param name="installer">null → kendini güncelleme kapalı (yalnızca yayın sayfası açılır).</param>
+    public MainViewModel(
+        StorageService storage,
+        UpdateService? updates = null,
+        IStartupRegistration? startup = null,
+        IFileDialogs? dialogs = null,
+        UpdateInstaller? installer = null)
     {
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
         _updates = updates ?? new UpdateService(null, UpdateService.ReadCurrentVersion());
         _startup = startup ?? new InMemoryStartupRegistration();
+        _backups = new BackupService(_storage.FilePath);
+        _dialogs = dialogs ?? new NullFileDialogs();
+        _installer = installer;
         _versionText = UpdateService.FormatVersion(_updates.CurrentVersion);
         _currentTheme = ThemePalette.All[0];
         _selectedThemeOption = OptionSets.Themes[0];
@@ -215,7 +235,7 @@ public sealed partial class MainViewModel : ObservableObject
     private string _calendarTitle = string.Empty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsChartView), nameof(IsStatsView), nameof(IsCalendarView))]
+    [NotifyPropertyChangedFor(nameof(IsChartView), nameof(IsStatsView), nameof(IsCalendarView), nameof(IsFocusView))]
     private ChartMode _chartMode = ChartMode.Last30;
 
     public bool IsChartView => ChartMode is ChartMode.Last30 or ChartMode.Last7;
@@ -223,6 +243,48 @@ public sealed partial class MainViewModel : ObservableObject
     public bool IsStatsView => ChartMode == ChartMode.Stats;
 
     public bool IsCalendarView => ChartMode == ChartMode.Calendar;
+
+    public bool IsFocusView => ChartMode == ChartMode.Focus;
+
+    // ───────── Odak istatistiği ─────────
+
+    public ObservableCollection<StatTile> FocusTiles { get; } = [];
+
+    public ObservableCollection<FocusSlice> FocusByCategory { get; } = [];
+
+    public ObservableCollection<FocusSlice> FocusByTask { get; } = [];
+
+    /// <summary>Odak sekmesinin aralığı: 7 ya da 30 gün.</summary>
+    [ObservableProperty]
+    private int _focusRangeDays = 7;
+
+    public bool HasFocusData => FocusByTask.Count > 0;
+
+    // ───────── Veri / yedek ─────────
+
+    public ObservableCollection<BackupInfo> Backups { get; } = [];
+
+    [ObservableProperty]
+    private bool _isDataOpen;
+
+    public string BackupDirectory => _backups.BackupDirectory;
+
+    // ───────── Güncelleme kurulumu ─────────
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanInstallUpdate))]
+    [NotifyCanExecuteChangedFor(nameof(InstallUpdateCommand))]
+    private bool _isInstallingUpdate;
+
+    /// <summary>Kurulu kopya + yayında güncelleme paketi var + şu an kurulmuyor.</summary>
+    public bool CanInstallUpdate =>
+        !IsInstallingUpdate
+        && _installer is { CanSelfUpdate: true }
+        && _latestRelease is { AssetUrl: not null, ChecksumUrl: not null } release
+        && release.Version > _updates.CurrentVersion;
+
+    /// <summary>Yeni exe yerine kondu: View kayıtları boşaltıp bu exe'yi başlatmalı ve kapanmalı.</summary>
+    public event EventHandler<string>? RestartRequested;
 
     public BulkObservableCollection<CyberTask> ActiveTasks { get; } = [];
 
@@ -363,10 +425,12 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         CyberData data;
+        bool isNew = false;
         try
         {
             var result = await _storage.LoadAsync();
             data = result.Data;
+            isNew = result.IsNew;
             if (result.CorruptBackupFile is not null)
             {
                 ErrorMessage = _loc.Format("Err_LoadCorrupt", result.CorruptBackupFile);
@@ -382,8 +446,41 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         _settings = data.Settings;
-        _nextTaskNumber = data.NextTaskNumber;
         ApplySettingsToUi();
+
+        var now = DateTime.Now;
+        ApplyData(data, now);
+
+        _initialized = true;
+        OnTasksChanged();
+        RebuildChart();
+
+        ReadStartupState();
+
+        _lastClockMinute = now.Minute;
+        _viewsDay = DateOnly.FromDateTime(now); // görünümler az önce bu gün için kuruldu
+        _clock.Start();
+        CheckReminders(now); // uygulama kapalıyken kaçırılan hatırlatmalar hemen gösterilir
+
+        if (!isNew)
+        {
+            _ = CreateDailyBackupAsync(now); // yüklenen hâlin günlük yedeği; hata UI'a yansır
+        }
+
+        UpdateStatusText = _updates.IsConfigured ? string.Empty : _loc["Update_NotConfigured"];
+        if (_settings.AutoCheckUpdates && _updates.IsConfigured)
+        {
+            _ = AutoCheckUpdatesAsync(); // ağ beklenmez; hatalar CheckAsync içinde sonuca dönüşür
+        }
+    }
+
+    /// <summary>
+    /// Görev, gün, şablon ve odak verisini arayüz koleksiyonlarına yükler (açılış, yedekten geri yükleme, içe aktarma).
+    /// Ayarlar bilinçli olarak dokunulmaz: geri yükleme/içe aktarma dil, tema, ölçek gibi tercihleri değiştirmez.
+    /// </summary>
+    private void ApplyData(CyberData data, DateTime now)
+    {
+        _nextTaskNumber = data.NextTaskNumber;
 
         _daysByDate.Clear();
         foreach (var day in data.Days)
@@ -391,12 +488,15 @@ public sealed partial class MainViewModel : ObservableObject
             _daysByDate[day.Date] = day; // aynı tarih iki kez varsa sonuncusu geçerli
         }
 
+        Templates.Clear();
         foreach (var template in data.Templates)
         {
             Templates.Add(template);
         }
 
-        var now = DateTime.Now;
+        _focusSessions.Clear();
+        _focusSessions.AddRange(data.FocusSessions.OrderBy(static s => s.Start));
+
         var active = data.Tasks.Where(static t => !t.IsCompleted).OrderBy(static t => t.CreatedAt).ToList();
 
         // Eski kayıtlarda SortOrder yok (hepsi 0): eklenme sırasıyla numarala ki "ELLE" sıralama anlamlı başlasın.
@@ -417,25 +517,18 @@ public sealed partial class MainViewModel : ObservableObject
             UpdateDerivedState(task, now);
         }
 
+        if (ActiveTasks.Count > 0)
+        {
+            ActiveTasks.Clear();
+        }
+
+        if (CompletedTasks.Count > 0)
+        {
+            CompletedTasks.Clear();
+        }
+
         ActiveTasks.AddRange(active);
         CompletedTasks.AddRange(completed);
-
-        _initialized = true;
-        OnTasksChanged();
-        RebuildChart();
-
-        ReadStartupState();
-
-        _lastClockMinute = now.Minute;
-        _viewsDay = DateOnly.FromDateTime(now); // görünümler az önce bu gün için kuruldu
-        _clock.Start();
-        CheckReminders(now); // uygulama kapalıyken kaçırılan hatırlatmalar hemen gösterilir
-
-        UpdateStatusText = _updates.IsConfigured ? string.Empty : _loc["Update_NotConfigured"];
-        if (_settings.AutoCheckUpdates && _updates.IsConfigured)
-        {
-            _ = AutoCheckUpdatesAsync(); // ağ beklenmez; hatalar CheckAsync içinde sonuca dönüşür
-        }
     }
 
     /// <summary>Kapanışta: çalışan odak oturumunun geçen süresini kaydet, saati durdur, yazmaların bitmesini bekle.</summary>
@@ -505,6 +598,23 @@ public sealed partial class MainViewModel : ObservableObject
         NewTaskTitle = string.Empty; // kategori kutusu bilinçli korunur: aynı kategoriye art arda ekleme kolay olsun
         OnTasksChanged();
 
+        PushUndo(_loc.Format("Undo_Add", task.Code), async () =>
+        {
+            if (!ActiveTasks.Contains(task))
+            {
+                return;
+            }
+
+            if (FocusTask == task)
+            {
+                StopFocusCore(DateTime.Now); // harcanan süre günlüğe işlenir, kaybolmaz
+            }
+
+            ActiveTasks.Remove(task);
+            OnTasksChanged();
+            await SaveAsync();
+        });
+
         await SaveAsync();
     }
 
@@ -516,8 +626,25 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
-        var now = DateTime.Now;
+        double sortOrder = task.SortOrder;
+        CompleteCore(task, DateTime.Now);
+        PushUndo(_loc.Format("Undo_Complete", task.Code), async () =>
+        {
+            if (!task.IsCompleted || !CompletedTasks.Contains(task))
+            {
+                return;
+            }
 
+            RestoreCore(task, sortOrder);
+            await SaveAsync();
+        });
+
+        await SaveAsync();
+    }
+
+    /// <summary>Tamamlama: log satırı, güne saat, listeler arası taşıma, tekrar kopyası. Geri alma kaydı üretmez.</summary>
+    private void CompleteCore(CyberTask task, DateTime now)
+    {
         // Bu görevde odak çalışıyorsa önce geçen süre işlenir.
         if (FocusTask == task)
         {
@@ -558,7 +685,6 @@ public sealed partial class MainViewModel : ObservableObject
 
         OnTasksChanged();
         RebuildChart(); // ölçek (max saat) değişmiş olabilir
-        await SaveAsync();
     }
 
     /// <summary>Tamamlanan görevi geri alır; log satırını, eklenen saati ve (varsa) üretilen tekrar kopyasını geri çeker.</summary>
@@ -570,6 +696,24 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        RestoreCore(task, sortOrder: null);
+        PushUndo(_loc.Format("Undo_Restore", task.Code), async () =>
+        {
+            if (task.IsCompleted || !ActiveTasks.Contains(task))
+            {
+                return;
+            }
+
+            CompleteCore(task, DateTime.Now);
+            await SaveAsync();
+        });
+
+        await SaveAsync();
+    }
+
+    /// <param name="sortOrder">null → listenin sonuna; değer → eski yerine (tamamlamayı geri alırken).</param>
+    private void RestoreCore(CyberTask task, double? sortOrder)
+    {
         if (task.CompletedAt is { } completedAt
             && _daysByDate.TryGetValue(DateOnly.FromDateTime(completedAt), out var day))
         {
@@ -602,14 +746,13 @@ public sealed partial class MainViewModel : ObservableObject
         task.CompletionCreditHours = 0;
         task.IsCompleted = false;
         task.CompletedAt = null;
-        task.SortOrder = NextSortOrder();
+        task.SortOrder = sortOrder ?? NextSortOrder();
 
         CompletedTasks.Remove(task);
         ActiveTasks.Add(task);
 
         OnTasksChanged();
         RebuildChart();
-        await SaveAsync();
     }
 
     /// <summary>Siler; 6 sn boyunca "GERİ AL" (veya Ctrl+Z) ile aynı yerine geri konabilir. Log geçmişi korunur.</summary>
@@ -642,16 +785,23 @@ public sealed partial class MainViewModel : ObservableObject
         OnTasksChanged();
         await SaveAsync();
 
-        ShowToast(
+        var entry = PushUndo(_loc.Format("Undo_Delete", task.Code), async () =>
+        {
+            if (list.Contains(task))
+            {
+                return;
+            }
+
+            list.Insert(Math.Min(index, list.Count), task);
+            OnTasksChanged();
+            await SaveAsync();
+        });
+
+        entry.Toast = ShowToast(
             _loc.Format("Toast_Deleted", task.Code),
             ToastKind.Info,
             _loc["Toast_Undo"],
-            async () =>
-            {
-                list.Insert(Math.Min(index, list.Count), task);
-                OnTasksChanged();
-                await SaveAsync();
-            },
+            () => RevertAsync(entry),
             s_undoLifetime);
     }
 
@@ -670,7 +820,13 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task SaveEditAsync()
     {
-        if (Editor is not { } editor || !editor.TryApply())
+        if (Editor is not { } editor)
+        {
+            return;
+        }
+
+        var before = TaskMemento.Capture(editor.Target);
+        if (!editor.TryApply())
         {
             return; // geçersizse diyalog açık kalır, hata metni gösterilir
         }
@@ -680,6 +836,24 @@ public sealed partial class MainViewModel : ObservableObject
         Editor = null;
 
         OnTasksChanged(); // sıralama anahtarı / akıllı liste üyeliği değişmiş olabilir
+        PushUndo(_loc.Format("Undo_Edit", task.Code), async () =>
+        {
+            if (!ActiveTasks.Contains(task))
+            {
+                return;
+            }
+
+            if (Editor?.Target == task)
+            {
+                Editor = null; // açık taslak eski değerlerin üzerine yazmasın
+            }
+
+            before.ApplyTo(task);
+            UpdateDerivedState(task, DateTime.Now);
+            OnTasksChanged();
+            await SaveAsync();
+        });
+
         await SaveAsync();
     }
 
@@ -763,6 +937,9 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>Test için: odak oturumunu verilen anda bitirir (gerçek dakikalarca beklemeden).</summary>
+    internal bool StopFocusAt(DateTime now) => StopFocusCore(now);
+
     /// <summary>Oturumu kapatır; en az 1 dakika geçtiyse süreyi göreve ve güne işler. İşlendiyse true.</summary>
     private bool StopFocusCore(DateTime now)
     {
@@ -796,6 +973,20 @@ public sealed partial class MainViewModel : ObservableObject
     {
         task.TrackedMinutes += minutes;
         RefreshTrackedText(task);
+
+        _focusSessions.Add(new FocusSession
+        {
+            Start = now.AddMinutes(-minutes),
+            Minutes = minutes,
+            TaskId = task.Id,
+            TaskNumber = task.Number,
+            Title = task.Title,
+            Category = string.IsNullOrWhiteSpace(task.Category) ? null : task.Category.Trim(),
+        });
+        if (_focusSessions.Count > MaxFocusSessions)
+        {
+            _focusSessions.RemoveRange(0, _focusSessions.Count - MaxFocusSessions); // en eskiler
+        }
 
         var day = GetOrCreateDay(DateOnly.FromDateTime(now));
         day.HoursWorked = Math.Round(day.HoursWorked + minutes / 60.0, 2);
@@ -846,6 +1037,241 @@ public sealed partial class MainViewModel : ObservableObject
 
     [RelayCommand]
     private void ShowCalendar() => ChartMode = ChartMode.Calendar;
+
+    [RelayCommand]
+    private void ShowFocus() => ChartMode = ChartMode.Focus;
+
+    [RelayCommand]
+    private void SetFocusRange(string? days)
+    {
+        if (int.TryParse(days, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) && value is 7 or 30)
+        {
+            FocusRangeDays = value;
+        }
+    }
+
+    partial void OnFocusRangeDaysChanged(int value)
+    {
+        if (_initialized && IsFocusView)
+        {
+            RefreshFocusStats();
+        }
+    }
+
+    // ───────── Veri: yedek / geri yükleme / dışa-içe aktarma ─────────
+
+    private const string JsonFilter = "JSON (*.json)|*.json";
+
+    [RelayCommand]
+    private void OpenData()
+    {
+        Editor = null;
+        IsSettingsOpen = false;
+        IsTemplatesOpen = false;
+        RefreshBackups();
+        IsDataOpen = true;
+    }
+
+    [RelayCommand]
+    private void CloseData() => IsDataOpen = false;
+
+    private void RefreshBackups()
+    {
+        Backups.Clear();
+        try
+        {
+            foreach (var backup in _backups.List())
+            {
+                Backups.Add(backup);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ErrorMessage = _loc.Format("Err_Backup", ex.Message);
+        }
+    }
+
+    /// <summary>O gün için yedek yoksa alır (açılışta ve gün dönünce). Hata yutulmaz, başlıkta gösterilir.</summary>
+    private async Task CreateDailyBackupAsync(DateTime now)
+    {
+        if (_persistenceDisabled)
+        {
+            return;
+        }
+
+        byte[] payload = StorageService.Serialize(CreateSnapshot()); // UI thread'inde tutarlı anlık görüntü
+        try
+        {
+            await _backups.CreateDailyAsync(payload, DateOnly.FromDateTime(now));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ErrorMessage = _loc.Format("Err_Backup", ex.Message);
+        }
+    }
+
+    [RelayCommand]
+    private async Task BackupNowAsync()
+    {
+        try
+        {
+            string path = await _backups.CreateSafetyAsync(StorageService.Serialize(CreateSnapshot()), DateTime.Now, "manual");
+            ShowToast(_loc.Format("Toast_BackupSaved", Path.GetFileName(path)), ToastKind.Info, lifetime: s_infoLifetime);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ErrorMessage = _loc.Format("Err_Backup", ex.Message);
+        }
+
+        RefreshBackups();
+    }
+
+    [RelayCommand]
+    private async Task RestoreBackupAsync(BackupInfo? backup)
+    {
+        if (backup is null || !_backups.Contains(backup.FullPath))
+        {
+            return;
+        }
+
+        var culture = _loc.Culture;
+        string when = backup.CreatedAt.ToString(_loc["Fmt_BackupDate"], culture);
+        await ReplaceFromFileAsync(backup.FullPath, "restore", data => _loc.Format("Confirm_Restore", when, data.Tasks.Count), "Toast_Restored");
+    }
+
+    [RelayCommand]
+    private async Task ImportJsonAsync()
+    {
+        string? path = _dialogs.PickOpenPath(JsonFilter);
+        if (path is null)
+        {
+            return;
+        }
+
+        await ReplaceFromFileAsync(path, "import", data => _loc.Format("Confirm_Import", Path.GetFileName(path), data.Tasks.Count), "Toast_Imported");
+    }
+
+    /// <summary>
+    /// Dosyayı okur → kullanıcıya sorar → mevcut verinin güvenlik yedeğini alır → veriyi değiştirir → hemen kaydeder.
+    /// Okuma veya yedekleme başarısızsa mevcut veriye dokunulmaz.
+    /// </summary>
+    private async Task ReplaceFromFileAsync(string path, string reason, Func<CyberData, string> confirmText, string toastKey)
+    {
+        if (_persistenceDisabled)
+        {
+            ErrorMessage = _loc["Err_PersistenceDisabled"];
+            return;
+        }
+
+        CyberData data;
+        try
+        {
+            data = await StorageService.ReadFileAsync(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            ErrorMessage = _loc.Format("Err_ReadFile", Path.GetFileName(path), ex.Message);
+            return;
+        }
+
+        if (!_dialogs.Confirm(confirmText(data)))
+        {
+            return;
+        }
+
+        string safety;
+        try
+        {
+            safety = await _backups.CreateSafetyAsync(StorageService.Serialize(CreateSnapshot()), DateTime.Now, reason);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ErrorMessage = _loc.Format("Err_Backup", ex.Message); // yedeksiz değiştirme yapılmaz
+            return;
+        }
+
+        ReplaceData(data);
+        _saveDirty = true;
+        _saveTimer.Stop();
+        await SaveNowAsync();
+
+        IsDataOpen = false;
+        ShowToast(_loc.Format(toastKey, data.Tasks.Count, Path.GetFileName(safety)), ToastKind.Info, lifetime: TimeSpan.FromSeconds(8));
+    }
+
+    /// <summary>Tüm veriyi değiştirir. Odak oturumu kredilendirilmeden kapanır (eski veriye aitti), geri alma geçmişi silinir.</summary>
+    private void ReplaceData(CyberData data)
+    {
+        if (FocusTask is { } focused)
+        {
+            focused.IsFocused = false;
+            FocusTask = null;
+            FocusRemainingText = string.Empty;
+            FocusProgress = 0;
+        }
+
+        Editor = null;
+        ClearUndo();
+
+        var now = DateTime.Now;
+        ApplyData(data, now);
+        _viewsDay = DateOnly.FromDateTime(now);
+        OnTasksChanged();
+        RebuildChart();
+    }
+
+    [RelayCommand]
+    private async Task ExportJsonAsync()
+    {
+        string? path = _dialogs.PickSavePath($"calabatica-{DateTime.Now:yyyyMMdd}.json", JsonFilter);
+        if (path is not null)
+        {
+            await ExportAsync(path, StorageService.Serialize(CreateSnapshot()));
+        }
+    }
+
+    [RelayCommand]
+    private async Task ExportCsvAsync()
+    {
+        string? path = _dialogs.PickSavePath($"calabatica-{DateTime.Now:yyyyMMdd}.csv", "CSV (*.csv)|*.csv");
+        if (path is null)
+        {
+            return;
+        }
+
+        // Excel UTF-8'i BOM ile tanır; ayırıcı/ondalık Windows bölge ayarından (Excel de onu kullanır).
+        string csv = DataExporter.ToCsv([.. ActiveTasks, .. CompletedTasks], CultureInfo.CurrentCulture);
+        await ExportAsync(path, [.. System.Text.Encoding.UTF8.GetPreamble(), .. System.Text.Encoding.UTF8.GetBytes(csv)]);
+    }
+
+    [RelayCommand]
+    private async Task ExportIcsAsync()
+    {
+        if (!ActiveTasks.Any(static t => t.DueAt is not null))
+        {
+            ShowToast(_loc["Toast_NoDatedTasks"], ToastKind.Info, lifetime: s_infoLifetime);
+            return;
+        }
+
+        string? path = _dialogs.PickSavePath($"calabatica-{DateTime.Now:yyyyMMdd}.ics", "iCalendar (*.ics)|*.ics");
+        if (path is not null)
+        {
+            await ExportAsync(path, System.Text.Encoding.UTF8.GetBytes(DataExporter.ToIcs(ActiveTasks, DateTime.UtcNow)));
+        }
+    }
+
+    private async Task ExportAsync(string path, byte[] payload)
+    {
+        try
+        {
+            await StorageService.WriteAtomicAsync(path, payload);
+            ShowToast(_loc.Format("Toast_Exported", Path.GetFileName(path)), ToastKind.Info, lifetime: s_infoLifetime);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ErrorMessage = _loc.Format("Err_Export", ex.Message);
+        }
+    }
 
     [RelayCommand]
     private void PreviousMonth() => CalendarMonth = CalendarMonth.AddMonths(-1);
@@ -943,6 +1369,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         var now = DateTime.Now;
         var today = Today;
+        var added = new List<CyberTask>(template.Items.Count);
         foreach (var item in template.Items)
         {
             var dueDate = item.DueDayOffset is { } offset ? today.AddDays(offset) : (DateOnly?)null;
@@ -971,10 +1398,26 @@ public sealed partial class MainViewModel : ObservableObject
 
             UpdateDerivedState(task, now);
             ActiveTasks.Add(task);
+            added.Add(task);
         }
 
         IsTemplatesOpen = false;
         OnTasksChanged();
+        PushUndo(_loc.Format("Undo_Template", template.Name), async () =>
+        {
+            foreach (var task in added)
+            {
+                if (FocusTask == task)
+                {
+                    StopFocusCore(DateTime.Now);
+                }
+
+                ActiveTasks.Remove(task); // tamamlanmış/silinmiş olanlar zaten listede yok
+            }
+
+            OnTasksChanged();
+            await SaveAsync();
+        });
         ShowToast(_loc.Format("Toast_TemplateApplied", template.Name, template.Items.Count), ToastKind.Info, lifetime: s_infoLifetime);
         await SaveAsync();
     }
@@ -1023,10 +1466,56 @@ public sealed partial class MainViewModel : ObservableObject
                 UpdateStatusText = _loc.Format("Update_Available", latest);
                 UpdateBadgeText = "▲ " + latest;
                 _releasePageUrl = result.Latest.PageUrl;
+                _latestRelease = result.Latest;
+                OnPropertyChanged(nameof(CanInstallUpdate));
+                InstallUpdateCommand.NotifyCanExecuteChanged();
+
+                // Aynı sürüm için bir kez "KUR" bildirimi (her denetimde tekrar çıkmasın).
+                if (CanInstallUpdate && _toastedUpdateVersion != result.Latest.Version)
+                {
+                    _toastedUpdateVersion = result.Latest.Version;
+                    ShowToast(_loc.Format("Toast_UpdateReady", latest), ToastKind.Info, _loc["Update_Install"], InstallUpdateAsync);
+                }
+
                 break;
             default:
                 UpdateStatusText = _loc.Format("Update_Failed", result.Error);
                 break;
+        }
+    }
+
+    /// <summary>
+    /// İndir → SHA256 doğrula → exe'yi değiştir → yeniden başlat. Hata olursa uygulama olduğu gibi çalışmaya devam eder
+    /// (yarım dosya kalmaz, çalışan exe yerinde kalır) ve neden ayarlar panelinde yazar.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanInstallUpdate))]
+    private async Task InstallUpdateAsync()
+    {
+        if (!CanInstallUpdate || _installer is null || _latestRelease is not { } release)
+        {
+            return;
+        }
+
+        IsInstallingUpdate = true;
+        try
+        {
+            UpdateStatusText = _loc.Format("Update_Downloading", 0);
+            var progress = new Progress<int>(p => UpdateStatusText = _loc.Format("Update_Downloading", p));
+            string staged = await _installer.DownloadAndStageAsync(release, progress);
+            _installer.Swap(staged);
+            _installer.RecordInstalledVersion(release.Version);
+            UpdateStatusText = _loc["Update_Restarting"];
+            RestartRequested?.Invoke(this, _installer.ExePath!);
+        }
+        catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or IOException or InvalidDataException
+                                       or UnauthorizedAccessException or TaskCanceledException or InvalidOperationException)
+        {
+            UpdateStatusText = _loc.Format("Update_InstallFailed", ex.Message);
+            ShowToast(UpdateStatusText, ToastKind.Info, lifetime: TimeSpan.FromSeconds(8));
+        }
+        finally
+        {
+            IsInstallingUpdate = false;
         }
     }
 
@@ -1064,6 +1553,9 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        var previousOrders = ActiveTasks.Select(static t => (Task: t, t.SortOrder)).ToList();
+        var previousSort = SelectedSortOption;
+
         var comparer = new TaskComparer(SelectedSortOption?.Value ?? SortMode.Created);
         var ordered = ActiveTasks.OrderBy(t => t, Comparer<CyberTask>.Create((a, b) => comparer.Compare(a, b))).ToList();
         ordered.Remove(dragged);
@@ -1077,6 +1569,26 @@ public sealed partial class MainViewModel : ObservableObject
 
         SelectedSortOption = OptionSets.Find(OptionSets.SortModes, SortMode.Manual); // CustomSort'u da ayarlar + kaydeder
         ActiveView.Refresh();
+
+        PushUndo(_loc.Format("Undo_Move", dragged.Code), async () =>
+        {
+            foreach (var (task, sortOrder) in previousOrders)
+            {
+                task.SortOrder = sortOrder;
+            }
+
+            if (SelectedSortOption == previousSort)
+            {
+                ActiveView.Refresh(); // mod değişmediyse CustomSort yenilenmez → elle yenile
+            }
+            else
+            {
+                SelectedSortOption = previousSort;
+            }
+
+            await SaveAsync();
+        });
+
         await SaveAsync();
     }
 
@@ -1110,15 +1622,70 @@ public sealed partial class MainViewModel : ObservableObject
         await toast.Action();
     }
 
-    /// <summary>Ctrl+Z: en son geri alınabilir işlemi (silme) geri al.</summary>
-    [RelayCommand]
+    // ───────── Geri alma ─────────
+
+    public bool CanUndo => _undoStack.Count > 0;
+
+    /// <summary>Son geri alınabilir işlemin açıklaması (düğme ipucu); yoksa boş.</summary>
+    public string UndoHint => _undoStack.Count > 0 ? _loc.Format("Tip_UndoLast", _undoStack[^1].Message) : _loc["Tip_Undo"];
+
+    /// <summary>Ctrl+Z / ↶: en son işlemi (ekle, tamamla, geri aç, düzenle, taşı, sil, şablon) geri alır.</summary>
+    [RelayCommand(CanExecute = nameof(CanUndo), AllowConcurrentExecutions = true)]
     private async Task UndoAsync()
     {
-        var toast = Toasts.LastOrDefault(static t => t.HasAction);
-        if (toast is not null)
+        if (_undoStack.Count > 0)
         {
-            await RunToastActionAsync(toast);
+            await RevertAsync(_undoStack[^1]);
         }
+    }
+
+    private UndoEntry PushUndo(string message, Func<Task> revert)
+    {
+        var entry = new UndoEntry(message, revert);
+        _undoStack.Add(entry);
+        if (_undoStack.Count > MaxUndo)
+        {
+            _undoStack.RemoveAt(0);
+        }
+
+        OnUndoStackChanged();
+        return entry;
+    }
+
+    /// <summary>Kaydı yığından çıkarıp geri alır. Kayıt zaten kullanılmışsa (bildirimden + Ctrl+Z) hiçbir şey yapmaz.</summary>
+    private async Task RevertAsync(UndoEntry entry)
+    {
+        if (!_undoStack.Remove(entry))
+        {
+            return;
+        }
+
+        OnUndoStackChanged();
+        if (entry.Toast is { } toast)
+        {
+            Toasts.Remove(toast);
+        }
+
+        await entry.Revert();
+        ShowToast(_loc.Format("Toast_Undone", entry.Message), ToastKind.Info, lifetime: s_infoLifetime);
+    }
+
+    private void ClearUndo()
+    {
+        foreach (var toast in _undoStack.Select(static e => e.Toast).OfType<ToastItem>())
+        {
+            Toasts.Remove(toast);
+        }
+
+        _undoStack.Clear();
+        OnUndoStackChanged();
+    }
+
+    private void OnUndoStackChanged()
+    {
+        OnPropertyChanged(nameof(CanUndo));
+        OnPropertyChanged(nameof(UndoHint));
+        UndoCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>Esc: açık diyaloğu kapat; yoksa aramayı temizle.</summary>
@@ -1136,6 +1703,10 @@ public sealed partial class MainViewModel : ObservableObject
         else if (IsTemplatesOpen)
         {
             IsTemplatesOpen = false;
+        }
+        else if (IsDataOpen)
+        {
+            IsDataOpen = false;
         }
         else if (SearchText.Length > 0)
         {
@@ -1421,8 +1992,9 @@ public sealed partial class MainViewModel : ObservableObject
             UpdateStatusText = _updates.IsConfigured ? string.Empty : _loc["Update_NotConfigured"];
         }
 
-        RebuildChart(); // tarih etiketleri, istatistik ve takvim dile bağlı
+        RebuildChart(); // tarih etiketleri, istatistik, odak ve takvim dile bağlı
         OnPropertyChanged(nameof(Editor)); // düzenleyici başlığı
+        OnPropertyChanged(nameof(UndoHint));
     }
 
     private void OnClockTick(object? sender, EventArgs e)
@@ -1491,6 +2063,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             _viewsDay = today;
             stateChanged = true;
+            _ = CreateDailyBackupAsync(now); // tepside günlerce açık kalsa da her gün bir yedek
         }
 
         if (stateChanged)
@@ -1872,21 +2445,24 @@ public sealed partial class MainViewModel : ObservableObject
     private void RefreshRecurrenceText(CyberTask task) =>
         task.RecurrenceText = FormatRecurrence(task.Recurrence, task.RepeatDays);
 
-    private void ShowToast(string message, ToastKind kind, string? actionLabel = null, Func<Task>? action = null, TimeSpan? lifetime = null)
+    private ToastItem ShowToast(string message, ToastKind kind, string? actionLabel = null, Func<Task>? action = null, TimeSpan? lifetime = null)
     {
-        Toasts.Add(new ToastItem
+        var toast = new ToastItem
         {
             Message = message,
             Kind = kind,
             ActionLabel = actionLabel,
             Action = action,
             ExpiresAt = lifetime is { } span ? DateTime.Now + span : null,
-        });
+        };
+        Toasts.Add(toast);
 
         while (Toasts.Count > MaxToasts)
         {
             Toasts.RemoveAt(0);
         }
+
+        return toast;
     }
 
     private void UpdateSelectedDayTexts()
@@ -1992,6 +2568,34 @@ public sealed partial class MainViewModel : ObservableObject
         {
             RefreshCalendar();
         }
+        else if (IsFocusView)
+        {
+            RefreshFocusStats();
+        }
+    }
+
+    private void RefreshFocusStats()
+    {
+        var (tiles, categories, tasks) = InsightsBuilder.BuildFocus(_focusSessions, Today, FocusRangeDays, _loc, FormatMinutes);
+        FocusTiles.Clear();
+        foreach (var tile in tiles)
+        {
+            FocusTiles.Add(tile);
+        }
+
+        FocusByCategory.Clear();
+        foreach (var slice in categories)
+        {
+            FocusByCategory.Add(slice);
+        }
+
+        FocusByTask.Clear();
+        foreach (var slice in tasks)
+        {
+            FocusByTask.Add(slice);
+        }
+
+        OnPropertyChanged(nameof(HasFocusData));
     }
 
     private void RefreshStats()
@@ -2161,6 +2765,7 @@ public sealed partial class MainViewModel : ObservableObject
         Settings = _settings,
         Templates = [.. Templates],
         Tasks = [.. ActiveTasks, .. CompletedTasks],
+        FocusSessions = [.. _focusSessions],
         Days =
         [
             .. _daysByDate.Values

@@ -96,6 +96,7 @@ public partial class MainWindow : Window
     private bool _trayHintShown;
     private Point _dragStart;
     private CyberTask? _dragCandidate;
+    private MiniWindow? _mini;
 
     public MainWindow(bool startHidden = false)
     {
@@ -112,6 +113,17 @@ public partial class MainWindow : Window
         _tray = new TrayIconHost();
         _tray.ShowRequested += (_, _) => ShowFromTray();
         _tray.ExitRequested += (_, _) => ExitApplication();
+        _tray.MiniRequested += (_, _) =>
+        {
+            if (_viewModel.IsMiniMode)
+            {
+                ShowMini(); // gizlenmişse geri getir
+            }
+            else
+            {
+                _viewModel.ToggleMiniModeCommand.Execute(null);
+            }
+        };
 
         _viewModel.AttentionRequested += OnAttentionRequested;
         _viewModel.OpenUrlRequested += OnOpenUrlRequested;
@@ -129,7 +141,7 @@ public partial class MainWindow : Window
             _viewModel.FlushNow();
         };
 
-        ApplyTheme(_viewModel.CurrentTheme);
+        ApplyTheme(Resources, _viewModel.CurrentTheme);
 
         // Loaded yerine: pencere tepside gizli başlasa da veri yüklensin, hatırlatıcılar çalışsın.
         Dispatcher.BeginInvoke(InitializeAfterConstruction, DispatcherPriority.Loaded);
@@ -146,9 +158,15 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>Tepsiden / ikinci örnekten / bildirime tıklamadan pencereyi öne getirir.</summary>
+    /// <summary>Tepsiden / ikinci örnekten / bildirime tıklamadan pencereyi öne getirir (mini moddaysa tam görünüme döner).</summary>
     public void ShowFromTray()
     {
+        if (_viewModel.IsMiniMode)
+        {
+            _viewModel.IsMiniMode = false; // değişiklik işleyicisi bu metodu yeniden çağırır
+            return;
+        }
+
         if (!IsVisible)
         {
             Show();
@@ -259,6 +277,7 @@ public partial class MainWindow : Window
 
     private void OnClosed(object? sender, EventArgs e)
     {
+        _mini?.CloseForShutdown();
         _tray.Dispose();
         Application.Current.Shutdown();
     }
@@ -283,16 +302,119 @@ public partial class MainWindow : Window
                 break;
 
             case nameof(MainViewModel.CurrentTheme):
-                ApplyTheme(_viewModel.CurrentTheme);
+                ApplyTheme(Resources, _viewModel.CurrentTheme);
+                if (_mini is not null)
+                {
+                    ApplyTheme(_mini.Resources, _viewModel.CurrentTheme);
+                }
+
                 break;
+
+            case nameof(MainViewModel.IsMiniMode):
+                if (_viewModel.IsMiniMode)
+                {
+                    Hide();
+                    ShowMini();
+                }
+                else
+                {
+                    _mini?.Hide();
+                    ShowFromTray();
+                }
+
+                break;
+
+            case nameof(MainViewModel.SelectedTask) when _viewModel.SelectedTask is { } selected:
+                ScrollTaskIntoView(selected);
+                break;
+        }
+    }
+
+    private void ShowMini()
+    {
+        if (_mini is null)
+        {
+            _mini = new MiniWindow(_viewModel);
+            ApplyTheme(_mini.Resources, _viewModel.CurrentTheme);
+            _mini.HideRequested += (_, _) =>
+            {
+                if (_viewModel.MinimizeToTray)
+                {
+                    _mini.Hide(); // mini mod sürer; tepsiden "Göster" tam görünüme döner
+                    if (!_trayHintShown)
+                    {
+                        _trayHintShown = true;
+                        _tray.Notify(Localizer.Instance["Tray_Running"]);
+                    }
+                }
+                else
+                {
+                    _viewModel.IsMiniMode = false; // tepsi kapalı: gizlemek uygulamayı kaybettirirdi → tam görünüme dön
+                }
+            };
+            _mini.PlaceOnScreen();
+        }
+
+        _mini.Show();
+        _mini.Activate();
+    }
+
+    /// <summary>Klavyeyle seçilen satırı sanal listede görünür yap (oluşturulmamışsa önce dizinle getir).</summary>
+    private void ScrollTaskIntoView(CyberTask task)
+    {
+        int index = _viewModel.ActiveView.IndexOf(task);
+        if (index < 0)
+        {
+            return;
+        }
+
+        if (FindVisualChild<VirtualizingStackPanel>(ActiveList) is { } panel)
+        {
+            panel.BringIndexIntoViewPublic(index);
+        }
+
+        if (ActiveList.ItemContainerGenerator.ContainerFromIndex(index) is FrameworkElement container)
+        {
+            container.BringIntoView();
+        }
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent)
+        where T : DependencyObject
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T match)
+            {
+                return match;
+            }
+
+            if (FindVisualChild<T>(child) is { } nested)
+            {
+                return nested;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Satıra tıklandı: klavye seçimi o satıra geçer, liste klavye odağını alır.</summary>
+    private void Row_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: CyberTask task })
+        {
+            _viewModel.SelectedTask = task;
+            ActiveList.Focus();
         }
     }
 
     /// <summary>
     /// Tema: DynamicResource kullanan tüm fırçaları yeni (dondurulmuş) fırçalarla değiştirir.
     /// Primary = başlık/vurgu ("Yellow" anahtarları), Secondary = çerçeve/ikincil ("Cyan" anahtarları).
+    /// Ana pencere ve mini pencere sözlüğüne ayrı ayrı uygulanır.
     /// </summary>
-    private void ApplyTheme(ThemePalette palette)
+    private static void ApplyTheme(ResourceDictionary resources, ThemePalette palette)
     {
         static SolidColorBrush Brush(Color color)
         {
@@ -308,25 +430,36 @@ public partial class MainWindow : Window
             (byte)Math.Round(a.G + ((b.G - a.G) * t)),
             (byte)Math.Round(a.B + ((b.B - a.B) * t)));
 
-        Resources["PrimaryColor"] = palette.Primary;
-        Resources["SecondaryColor"] = palette.Secondary;
-        Resources["YellowBrush"] = Brush(palette.Primary);
-        Resources["CyanBrush"] = Brush(palette.Secondary);
-        Resources["YellowDimBrush"] = Brush(WithAlpha(palette.Primary, 0x55));
-        Resources["CyanDimBrush"] = Brush(WithAlpha(palette.Secondary, 0x66));
-        Resources["CyanFaintBrush"] = Brush(WithAlpha(palette.Secondary, 0x1F));
-        Resources["AxisTextBrush"] = Brush(Mix(palette.Secondary, Color.FromRgb(0x8A, 0x94, 0xA6), 0.55));
-        Resources["PrimaryDeepBrush"] = Brush(Mix(palette.Primary, Colors.Black, 0.9));
+        resources["PrimaryColor"] = palette.Primary;
+        resources["SecondaryColor"] = palette.Secondary;
+        resources["YellowBrush"] = Brush(palette.Primary);
+        resources["CyanBrush"] = Brush(palette.Secondary);
+        resources["YellowDimBrush"] = Brush(WithAlpha(palette.Primary, 0x55));
+        resources["CyanDimBrush"] = Brush(WithAlpha(palette.Secondary, 0x66));
+        resources["CyanFaintBrush"] = Brush(WithAlpha(palette.Secondary, 0x1F));
+        resources["AxisTextBrush"] = Brush(Mix(palette.Secondary, Color.FromRgb(0x8A, 0x94, 0xA6), 0.55));
+        resources["PrimaryDeepBrush"] = Brush(Mix(palette.Primary, Colors.Black, 0.9));
     }
 
     /// <summary>
     /// Odak kısayolları (VM komutu değil, View işi): Ctrl+N yeni görev kutusu, Ctrl+F arama.
     /// Diyalog açıkken arka plandaki alanlara odak taşınmaz.
     /// </summary>
-    private void OnPreviewKeyDown(object sender, KeyEventArgs e)
+    private async void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (Keyboard.Modifiers != ModifierKeys.Control || _viewModel.Editor is not null || _viewModel.IsSettingsOpen
-            || _viewModel.IsTemplatesOpen || _viewModel.IsDataOpen)
+        bool dialogOpen = _viewModel.Editor is not null || _viewModel.IsSettingsOpen || _viewModel.IsTemplatesOpen || _viewModel.IsDataOpen;
+        if (dialogOpen)
+        {
+            return;
+        }
+
+        if (Keyboard.Modifiers == ModifierKeys.None)
+        {
+            await HandleListKeyAsync(e);
+            return;
+        }
+
+        if (Keyboard.Modifiers != ModifierKeys.Control)
         {
             return;
         }
@@ -343,6 +476,71 @@ public partial class MainWindow : Window
             target.Focus();
             target.SelectAll();
             e.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// Fare olmadan liste: ↑/↓/Home/End seç, Space tamamla, Enter düzenle, Del sil, F odak başlat/durdur.
+    /// Metin kutusunda ve seçim listelerinde (kategori çipleri vb.) tuşlar kendi işini yapar; Esc metin kutusundan
+    /// listeye geçirir (arama doluysa önce aramayı temizler).
+    /// </summary>
+    private async Task HandleListKeyAsync(KeyEventArgs e)
+    {
+        var focused = Keyboard.FocusedElement as DependencyObject;
+        if (focused is TextBox textBox)
+        {
+            if (e.Key == Key.Escape && (textBox != SearchBox || _viewModel.SearchText.Length == 0))
+            {
+                ActiveList.Focus();
+                e.Handled = true;
+            }
+
+            return;
+        }
+
+        if (focused is ListBoxItem or ListBox or ComboBox)
+        {
+            return;
+        }
+
+        bool hasSelection = _viewModel.SelectedTask is not null;
+        switch (e.Key)
+        {
+            case Key.Down:
+                _viewModel.MoveSelection(1);
+                break;
+            case Key.Up:
+                _viewModel.MoveSelection(-1);
+                break;
+            case Key.Home:
+                _viewModel.SelectEdge(last: false);
+                break;
+            case Key.End:
+                _viewModel.SelectEdge(last: true);
+                break;
+            case Key.Space when hasSelection:
+                e.Handled = true; // await öncesi: düğme de tetiklenmesin
+                await _viewModel.CompleteSelectedAsync();
+                return;
+            case Key.Enter when hasSelection:
+                _viewModel.EditSelected();
+                break;
+            case Key.Delete when hasSelection:
+                e.Handled = true;
+                await _viewModel.DeleteSelectedAsync();
+                return;
+            case Key.F when hasSelection:
+                e.Handled = true;
+                await _viewModel.ToggleFocusSelectedAsync();
+                return;
+            default:
+                return;
+        }
+
+        e.Handled = true;
+        if (!ActiveList.IsKeyboardFocusWithin)
+        {
+            ActiveList.Focus(); // seçim yapıldı: sonraki tuşlar da listeye gelsin
         }
     }
 

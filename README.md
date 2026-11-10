@@ -28,7 +28,7 @@
 - Natural-language quick add: `Write report #work @tomorrow @14:00 ! *weekly ~2`
 - Priorities, categories, due dates and times, notes, subtasks with automatic progress
 - Repeat daily, weekly, monthly or on **selected weekdays** (e.g. Mon/Wed/Fri, weekdays, weekend)
-- Reminders (on time, 15 min, 1 h or 1 day before)
+- Reminders (on time, 15 min, 1 h or 1 day before) with snooze (10 min / 1 h)
 - Search, smart lists (Today / Upcoming / Overdue), category filters
 - Sort by creation, due date or priority, or reorder by **drag and drop**
 - Templates: save the visible tasks as a reusable set
@@ -36,6 +36,8 @@
 
 **Focus and insights**
 - Built-in focus (Pomodoro) timer per task; tracked time goes into your daily activity
+- Breaks after each focus (5 min, 15 min after every 4th), optional auto-start of the next focus
+- Habits: streaks, best streak, 30-day rate and a 28-day strip for every recurring task
 - Activity log and a 30 / 7-day chart (hover a bar to see that day)
 - Stats: current and longest streak, weekly comparison, peak hour, average by weekday
 - Focus stats: time per category and per task over the last 7 or 30 days
@@ -45,6 +47,7 @@
 - Turkish and English interface
 - Five color themes (Neon, Synthwave, Matrix, Amber, Arctic) and three UI scales
 - Runs in the system tray with Windows notifications; optional start with Windows
+- Mini mode (`Ctrl+M`): small always-on-top window with the timer and today's tasks
 - Updates itself from GitHub Releases: downloads the new version, verifies its SHA256 checksum and restarts
 - Daily automatic backups (last 7 kept), one-click restore, JSON / CSV (Excel) export and JSON import
 - Export tasks with due dates to Google Calendar, Outlook or Apple Calendar (`.ics`)
@@ -83,7 +86,11 @@ Turkish words work too (`@yarın`, `*haftalık`, `*pzt,çar,cum`, …).
 | `Ctrl+Z` | Undo last action |
 | `Ctrl+,` | Settings |
 | `Enter` | Add / save |
-| `Esc` | Close dialog / clear search |
+| `Esc` | Close dialog / clear search / leave a text box |
+| `↑` `↓` `Home` `End` | Select a task |
+| `Space` / `Enter` / `Del` | Complete / edit / delete the selected task |
+| `F` | Start or stop focus on the selected task |
+| `Ctrl+M` | Mini mode |
 
 ## Install
 

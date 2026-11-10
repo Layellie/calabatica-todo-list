@@ -120,6 +120,7 @@ public enum ChartMode
     Stats,
     Calendar,
     Focus,
+    Habits,
 }
 
 public enum ThemeId
@@ -323,8 +324,18 @@ public sealed partial class CyberTask : ObservableObject
     [ObservableProperty]
     private bool _reminderFired;
 
+    /// <summary>Ertelenen hatırlatma bu anda tekrar gösterilir (null = erteleme yok).</summary>
+    [ObservableProperty]
+    private DateTime? _snoozedUntil;
+
     /// <summary>Tekrarlayan görev tamamlanınca üretilen sonraki kopya; geri alınırsa o kopya da kaldırılır.</summary>
     public Guid? SpawnedNextId { get; set; }
+
+    /// <summary>
+    /// Tekrar zinciri kimliği: bir tekrarlayan görevin tüm kopyaları aynı değeri taşır (alışkanlık görünümü).
+    /// İlk kopyanın Id'si; tekrarsız görevlerde null.
+    /// </summary>
+    public Guid? SeriesId { get; set; }
 
     public ObservableCollection<SubTask> Subtasks { get; set; } = [];
 
@@ -404,6 +415,11 @@ public sealed partial class CyberTask : ObservableObject
     [property: JsonIgnore]
     private bool _isDropAfter;
 
+    /// <summary>Klavyeyle seçili satır (vurgu).</summary>
+    [ObservableProperty]
+    [property: JsonIgnore]
+    private bool _isSelected;
+
     /// <summary>Satırdaki tekrar etiketi: "↻ GÜNLÜK", "↻ PZT · ÇAR · CUM".</summary>
     [ObservableProperty]
     [property: JsonIgnore]
@@ -460,6 +476,41 @@ public sealed class AppSettings
     public bool MinimizeToTray { get; set; } = true;
 
     public bool AutoCheckUpdates { get; set; } = true;
+
+    /// <summary>Odak bitince mola zamanlayıcısı (5 dk; her 4 odakta bir 15 dk).</summary>
+    public bool BreaksEnabled { get; set; } = true;
+
+    /// <summary>Mola bitince aynı görevde yeni odak otomatik başlasın.</summary>
+    public bool AutoStartNextFocus { get; set; }
+
+    /// <summary>Mini pencerenin son konumu (null = ekranın sağ üstü).</summary>
+    public double? MiniLeft { get; set; }
+
+    public double? MiniTop { get; set; }
+}
+
+/// <summary>Alışkanlık şeridindeki tek gün.</summary>
+public enum HabitCellState
+{
+    Off,     // planlı değil / seri başlamadan önce
+    Done,    // planlı ve yapıldı
+    Missed,  // planlı, geçti, yapılmadı
+    Pending, // bugün planlı, henüz yapılmadı
+}
+
+public sealed record HabitCell(DateOnly Date, HabitCellState State, string Tip);
+
+/// <summary>Alışkanlık görünümünde bir tekrarlayan görev zinciri.</summary>
+public sealed record HabitRow(
+    string Title,
+    string RecurrenceText,
+    int Streak,
+    string StreakText,
+    string BestText,
+    string RateText,
+    IReadOnlyList<HabitCell> Cells)
+{
+    public bool IsHot => Streak > 0;
 }
 
 /// <summary>
@@ -493,8 +544,8 @@ public sealed record BackupInfo(string FullPath, string FileName, DateTime Creat
 /// <summary>JSON dosyasının kök nesnesi.</summary>
 public sealed class CyberData
 {
-    /// <summary>v4: odak oturumları (FocusSessions) eklendi.</summary>
-    public const int CurrentSchemaVersion = 4;
+    /// <summary>v4: odak oturumları (FocusSessions). v5: tekrar zinciri kimliği (CyberTask.SeriesId).</summary>
+    public const int CurrentSchemaVersion = 5;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
@@ -570,4 +621,11 @@ public sealed class ToastItem
     public DateTime? ExpiresAt { get; init; }
 
     public bool HasAction => ActionLabel is not null && Action is not null;
+
+    /// <summary>İkinci düğme (ör. hatırlatmada "1 SA" erteleme).</summary>
+    public string? SecondaryActionLabel { get; init; }
+
+    public Func<Task>? SecondaryAction { get; init; }
+
+    public bool HasSecondaryAction => SecondaryActionLabel is not null && SecondaryAction is not null;
 }

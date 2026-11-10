@@ -284,6 +284,33 @@ public sealed class StorageService
             }
         }
 
+        // v4 → v5: eski sürümler tekrar kopyalarını birbirine bağlamıyordu. Aynı başlık + kategori + tekrar kuralına
+        // sahip tekrarlayan görevler tek zincir sayılır; zincir kimliği en eski kopyanın Id'si (kararlı, tekrar çalışsa da aynı).
+        if (data.SchemaVersion < 5)
+        {
+            var groups = data.Tasks
+                .Where(static t => t is not null && t.Recurrence != Recurrence.None && t.SeriesId is null)
+                .GroupBy(static t => (
+                    Title: (t.Title ?? string.Empty).Trim().ToUpperInvariant(),
+                    Category: (t.Category ?? string.Empty).Trim().ToUpperInvariant(),
+                    t.Recurrence,
+                    t.RepeatDays));
+            foreach (var group in groups)
+            {
+                var seriesId = group.MinBy(static t => t.CreatedAt)!.Id;
+                foreach (var task in group)
+                {
+                    task.SeriesId = seriesId;
+                }
+            }
+        }
+
+        if ((settings.MiniLeft is { } miniLeft && !double.IsFinite(miniLeft)) || (settings.MiniTop is { } miniTop && !double.IsFinite(miniTop)))
+        {
+            settings.MiniLeft = null;
+            settings.MiniTop = null;
+        }
+
         data.SchemaVersion = CyberData.CurrentSchemaVersion;
 
         foreach (var task in data.Tasks)

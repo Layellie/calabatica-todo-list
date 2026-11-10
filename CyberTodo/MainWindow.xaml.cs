@@ -91,6 +91,7 @@ public static class Program
             new RegistryStartupRegistration(),
             new WpfFileDialogs(static () => Application.Current?.Windows.OfType<Window>().FirstOrDefault(static w => w.IsActive)),
             new UpdateInstaller());
+        viewModel.BeginPreload(); // dosya okuma/JSON, pencere XAML'i kurulurken arka planda
         var window = new MainWindow(viewModel, new TrayIconHost(), startHidden);
 
         // UI thread'inde yakalanmamış hata: rapor yaz, bekleyen kaydı diske indir, kullanıcıya söyle, düzgün kapan.

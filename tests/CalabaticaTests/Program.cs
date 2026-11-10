@@ -1063,6 +1063,45 @@ var thread = new Thread(() =>
             long afterTrim = WorkingSetMb();
             Check(trimmed && afterTrim < beforeTrim - 80, $"memory trim: working set {beforeTrim} MB -> {afterTrim} MB after releasing 160 MB");
 
+            // ══════════════ Veriyi önceden yükleme (BeginPreload) ══════════════
+            string prePath = Path.Combine(dir, "preload", "cyber_data.json");
+            var preSeed = new CyberData();
+            preSeed.Tasks.Add(new CyberTask { Number = 1, Title = "Preloaded 1" });
+            preSeed.Tasks.Add(new CyberTask { Number = 2, Title = "Preloaded 2", IsCompleted = true, CompletedAt = DateTime.Now });
+            preSeed.NextTaskNumber = 3;
+            await StorageService.WriteAtomicAsync(prePath, StorageService.Serialize(preSeed));
+            var pv = new MainViewModel(new StorageService(prePath));
+            pv.BeginPreload();
+            pv.BeginPreload(); // ikinci çağrı ikinci okuma başlatmaz
+            await pv.InitializeAsync();
+            Check(pv.ActiveTasks.Single().Title == "Preloaded 1" && pv.CompletedTasks.Single().Title == "Preloaded 2" && pv.ErrorMessage is null,
+                "preload: initialize uses the pre-started load (same data as a normal load)");
+
+            string preBadPath = Path.Combine(dir, "preload-bad", "cyber_data.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(preBadPath)!);
+            File.WriteAllText(preBadPath, "{ not json");
+            var pbv = new MainViewModel(new StorageService(preBadPath));
+            pbv.BeginPreload();
+            await pbv.InitializeAsync();
+            Check(pbv.ErrorMessage is not null && pbv.ActiveTasks.Count == 0 && Directory.GetFiles(Path.GetDirectoryName(preBadPath)!, "cyber_data.corrupt-*.json").Length == 1,
+                "preload: corrupt file is still backed up and reported");
+
+            string preLockPath = Path.Combine(dir, "preload-lock", "cyber_data.json");
+            await StorageService.WriteAtomicAsync(preLockPath, StorageService.Serialize(preSeed));
+            string lockedContent = File.ReadAllText(preLockPath);
+            using (var exclusive = new FileStream(preLockPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                var plv = new MainViewModel(new StorageService(preLockPath));
+                plv.BeginPreload();
+                await plv.InitializeAsync();
+                plv.NewTaskTitle = "must not overwrite";
+                await plv.AddTaskCommand.ExecuteAsync(null);
+                plv.FlushNow();
+                Check(plv.ErrorMessage is not null, "preload: a locked file reports an error and disables saving");
+            }
+
+            Check(File.ReadAllText(preLockPath) == lockedContent, "preload: locked file content was never overwritten");
+
             // ══════════════ Log ══════════════
             Check(File.Exists(Path.Combine(dir, "logs", "app.log")) && File.ReadAllText(Path.Combine(dir, "logs", "app.log")).Contains("ERROR [MainViewModel]"),
                 "log: caught errors (e.g. invalid import) are written to app.log");

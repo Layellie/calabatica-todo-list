@@ -137,8 +137,16 @@ public sealed partial class MainViewModel : ObservableObject
 
     // ═════════════════════════════ Yaşam döngüsü ═════════════════════════════
 
-    public async Task InitializeAsync()
-    {
+    private Task<LoadResult>? _preload;
+
+    /// <summary>
+    /// Veri dosyasını arka planda okumaya başlar; <see cref="InitializeAsync"/> sonucu bekler. Pencere XAML'i kurulurken
+    /// (~430 ms) JSON yüklemesi (~145 ms, ilk çağrıda yansıma kurulumu dahil) paralel biter. Pencereden ÖNCE çağrılır;
+    /// çağrılmazsa InitializeAsync dosyayı kendisi okur (davranış aynı). Birden çok çağrı tek okuma yapar.
+    /// </summary>
+    public void BeginPreload() => _preload ??= Task.Run(() => _storage.LoadAsync());
+
+    public async Task InitializeAsync()    {
         if (_initialized)
         {
             return;
@@ -148,7 +156,8 @@ public sealed partial class MainViewModel : ObservableObject
         bool isNew = false;
         try
         {
-            var result = await _storage.LoadAsync();
+            var result = await (_preload ?? _storage.LoadAsync());
+            _preload = null;
             data = result.Data;
             isNew = result.IsNew;
             if (result.CorruptBackupFile is not null)

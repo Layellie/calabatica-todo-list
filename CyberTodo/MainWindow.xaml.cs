@@ -21,12 +21,31 @@ public static class Program
     private const string MutexName = @"Local\CALABATICA.SingleInstance";
     private const string ShowEventName = @"Local\CALABATICA.Show";
 
+    /// <summary>Güncellemeden sonra yeni exe bu argümanla başlar: eski süreç kapanana kadar bekler.</summary>
+    public const string AfterUpdateArgument = "--after-update";
+
+    private static readonly TimeSpan s_afterUpdateWait = TimeSpan.FromSeconds(20);
+
     [STAThread]
     public static void Main(string[] args)
     {
         // Tek örnek: tepside çalışırken exe'ye tekrar tıklanırsa ikinci kopya açılmaz (aynı JSON'a iki yazar olurdu),
         // mevcut pencereye "göster" sinyali gider.
         using var mutex = new Mutex(initiallyOwned: true, MutexName, out bool createdNew);
+        bool afterUpdate = args.Any(static a => string.Equals(a, AfterUpdateArgument, StringComparison.OrdinalIgnoreCase));
+        if (!createdNew && afterUpdate)
+        {
+            // Eski sürüm kayıtlarını bitirip kapanıyor: onun bırakmasını bekle (sinyal gönderip çıkma).
+            try
+            {
+                createdNew = mutex.WaitOne(s_afterUpdateWait);
+            }
+            catch (AbandonedMutexException)
+            {
+                createdNew = true; // eski süreç mutex'i bırakmadan sonlandı; sahiplik bize geçti
+            }
+        }
+
         if (!createdNew)
         {
             try
@@ -43,6 +62,7 @@ public static class Program
         }
 
         using var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
+        UpdateInstaller.CleanupLeftovers(Environment.ProcessPath); // önceki güncellemeden kalan .old/.new
 
         bool startHidden = args.Any(static a => string.Equals(a, RegistryStartupRegistration.TrayArgument, StringComparison.OrdinalIgnoreCase));
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -81,7 +101,12 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        _viewModel = new MainViewModel(new StorageService(), new UpdateService(), new RegistryStartupRegistration());
+        _viewModel = new MainViewModel(
+            new StorageService(),
+            new UpdateService(),
+            new RegistryStartupRegistration(),
+            new WpfFileDialogs(() => IsVisible ? this : null),
+            new UpdateInstaller());
         DataContext = _viewModel;
 
         _tray = new TrayIconHost();
@@ -90,6 +115,7 @@ public partial class MainWindow : Window
 
         _viewModel.AttentionRequested += OnAttentionRequested;
         _viewModel.OpenUrlRequested += OnOpenUrlRequested;
+        _viewModel.RestartRequested += OnRestartRequested;
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
         PreviewKeyDown += OnPreviewKeyDown;
         Closing += OnClosing;
@@ -149,6 +175,41 @@ public partial class MainWindow : Window
         await FlushAsync();
         _tray.Dispose();
         Application.Current.Shutdown();
+    }
+
+    /// <summary>
+    /// Güncelleme kuruldu: bekleyen kayıtları yaz, yeni exe'yi "--after-update" ile başlat (eski süreç kapanana kadar
+    /// bekler, tek örnek kilidine takılmaz), sonra kapan. Başlatılamazsa uygulama açık kalır ve hata gösterilir.
+    /// </summary>
+    private async void OnRestartRequested(object? sender, string exePath)
+    {
+        await FlushAsync();
+        try
+        {
+            Process.Start(new ProcessStartInfo(exePath, Program.AfterUpdateArgument)
+            {
+                UseShellExecute = false,
+                WorkingDirectory = System.IO.Path.GetDirectoryName(exePath)!,
+            });
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            // Yeni exe yerinde; bir sonraki elle açılışta yeni sürüm çalışır.
+            _viewModel.ErrorMessage = ex.Message;
+            return;
+        }
+
+        _exitRequested = true;
+        _closeConfirmed = true; // kayıtlar zaten yazıldı
+        if (new WindowInteropHelper(this).Handle != IntPtr.Zero)
+        {
+            Close();
+        }
+        else
+        {
+            _tray.Dispose();
+            Application.Current.Shutdown();
+        }
     }
 
     private async Task FlushAsync()
@@ -264,7 +325,8 @@ public partial class MainWindow : Window
     /// </summary>
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (Keyboard.Modifiers != ModifierKeys.Control || _viewModel.Editor is not null || _viewModel.IsSettingsOpen || _viewModel.IsTemplatesOpen)
+        if (Keyboard.Modifiers != ModifierKeys.Control || _viewModel.Editor is not null || _viewModel.IsSettingsOpen
+            || _viewModel.IsTemplatesOpen || _viewModel.IsDataOpen)
         {
             return;
         }

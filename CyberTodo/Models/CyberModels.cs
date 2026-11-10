@@ -119,6 +119,7 @@ public enum ChartMode
     Last7,
     Stats,
     Calendar,
+    Focus,
 }
 
 public enum ThemeId
@@ -461,10 +462,39 @@ public sealed class AppSettings
     public bool AutoCheckUpdates { get; set; } = true;
 }
 
+/// <summary>
+/// Tek odak (Pomodoro) oturumu. Görev silinse/yeniden adlandırılsa da istatistik doğru kalsın diye
+/// başlık ve kategori oturum anındaki hâliyle saklanır.
+/// </summary>
+public sealed class FocusSession
+{
+    public DateTime Start { get; set; }
+
+    public int Minutes { get; set; }
+
+    public Guid TaskId { get; set; }
+
+    public int TaskNumber { get; set; }
+
+    public string Title { get; set; } = string.Empty;
+
+    public string? Category { get; set; }
+}
+
+/// <summary>Odak istatistiğinde yatay çubuk satırı (kategori ya da görev).</summary>
+public sealed record FocusSlice(string Label, string ValueText, GridLength FillWidth, GridLength EmptyWidth, bool IsTop);
+
+/// <summary>Ayarlardaki yedek listesi satırı.</summary>
+public sealed record BackupInfo(string FullPath, string FileName, DateTime CreatedAt, long SizeBytes, bool IsDaily)
+{
+    public string SizeText => SizeBytes < 1024 * 1024 ? $"{SizeBytes / 1024.0:0.#} KB" : $"{SizeBytes / 1024.0 / 1024.0:0.#} MB";
+}
+
 /// <summary>JSON dosyasının kök nesnesi.</summary>
 public sealed class CyberData
 {
-    public const int CurrentSchemaVersion = 3;
+    /// <summary>v4: odak oturumları (FocusSessions) eklendi.</summary>
+    public const int CurrentSchemaVersion = 4;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
@@ -477,6 +507,8 @@ public sealed class CyberData
     public List<DayActivity> Days { get; set; } = [];
 
     public List<TaskTemplate> Templates { get; set; } = [];
+
+    public List<FocusSession> FocusSessions { get; set; } = [];
 }
 
 /// <summary>

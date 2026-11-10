@@ -380,6 +380,290 @@ var thread = new Thread(() =>
             vm9.FlushNow(); // oturum kapanışı yolu (senkron)
             Check(File.ReadAllText(coalescePath).Contains("\"progress\": 60"), "FlushNow writes synchronously (session ending)");
 
+            // ══════════════ Geri alma (Ctrl+Z / ↶) ══════════════
+            var u = new MainViewModel(new StorageService(Path.Combine(dir, "undo.json")));
+            await u.InitializeAsync();
+            Check(!u.CanUndo && !u.UndoCommand.CanExecute(null), "undo: nothing to undo on start");
+
+            u.NewTaskTitle = "Undo A";
+            await u.AddTaskCommand.ExecuteAsync(null);
+            Check(u.CanUndo && u.UndoHint.Contains("#001"), "undo: add is undoable, hint names the task: " + u.UndoHint);
+            await u.UndoCommand.ExecuteAsync(null);
+            Check(u.ActiveTasks.Count == 0 && !u.CanUndo, "undo: add -> task removed");
+
+            u.NewTaskTitle = "Undo B";
+            await u.AddTaskCommand.ExecuteAsync(null);
+            u.NewTaskTitle = "Undo C";
+            await u.AddTaskCommand.ExecuteAsync(null);
+            var ub = u.ActiveTasks.First(t => t.Title == "Undo B");
+            double ubOrder = ub.SortOrder;
+            await u.CompleteTaskCommand.ExecuteAsync(ub);
+            int doneToday = u.ChartBars[^1].Day.CompletedCount;
+            Check(ub.IsCompleted && doneToday == 1, "undo: complete done");
+            await u.UndoCommand.ExecuteAsync(null);
+            Check(!ub.IsCompleted && u.ActiveTasks.Contains(ub) && ub.SortOrder == ubOrder && u.ChartBars[^1].Day.CompletedCount == 0,
+                "undo: complete -> active again, same place, day credit removed");
+
+            await Task.Delay(400); // çift tıklama kilidi (350 ms)
+            u.NewTaskTitle = "Undo R *daily @today";
+            await u.AddTaskCommand.ExecuteAsync(null);
+            var ur = u.ActiveTasks.First(t => t.Title == "Undo R");
+            await u.CompleteTaskCommand.ExecuteAsync(ur);
+            Check(u.ActiveTasks.Count(t => t.Title == "Undo R") == 1 && ur.IsCompleted, "undo: recurring complete spawns next copy");
+            await u.UndoCommand.ExecuteAsync(null);
+            Check(u.ActiveTasks.Count(t => t.Title == "Undo R") == 1 && u.ActiveTasks.Contains(ur), "undo: recurring complete -> spawned copy removed, original back");
+
+            await Task.Delay(400);
+            await u.CompleteTaskCommand.ExecuteAsync(ub);
+            await Task.Delay(400);
+            await u.RestoreTaskCommand.ExecuteAsync(ub);
+            Check(!ub.IsCompleted, "undo: restore done");
+            await u.UndoCommand.ExecuteAsync(null);
+            Check(ub.IsCompleted && u.CompletedTasks.Contains(ub), "undo: restore -> completed again");
+            await u.UndoCommand.ExecuteAsync(null); // ilk tamamlamayı da geri al
+            Check(!ub.IsCompleted, "undo: stack is LIFO (complete undone after restore undo)");
+
+            u.EditTaskCommand.Execute(ub);
+            u.Editor!.Title = "Undo B edited";
+            u.Editor.Notes = "note";
+            await u.SaveEditCommand.ExecuteAsync(null);
+            Check(ub.Title == "Undo B edited" && ub.Notes == "note", "undo: edit applied");
+            await u.UndoCommand.ExecuteAsync(null);
+            Check(ub.Title == "Undo B" && ub.Notes is null, "undo: edit -> previous title and notes");
+
+            var orderBefore = u.ActiveTasks.ToDictionary(t => t.Id, t => t.SortOrder);
+            var uc = u.ActiveTasks.First(t => t.Title == "Undo C");
+            await u.MoveTaskAsync(uc, u.ActiveTasks.First(t => t.Title == "Undo B"));
+            Check(u.SelectedSortOption.Value == SortMode.Manual, "undo: move switches to manual sort");
+            await u.UndoCommand.ExecuteAsync(null);
+            Check(u.SelectedSortOption.Value == SortMode.Created && u.ActiveTasks.All(t => orderBefore[t.Id] == t.SortOrder),
+                "undo: move -> previous order and sort mode");
+
+            await u.DeleteTaskCommand.ExecuteAsync(uc);
+            Check(!u.ActiveTasks.Contains(uc) && u.Toasts.Any(t => t.HasAction), "undo: delete shows UNDO toast");
+            await u.UndoCommand.ExecuteAsync(null); // Ctrl+Z
+            Check(u.ActiveTasks.Contains(uc) && !u.Toasts.Any(t => t.HasAction), "undo: Ctrl+Z restores deleted task and removes its toast");
+            Check(u.Toasts.Any(t => t.Message.StartsWith("↶")), "undo: 'undone' feedback toast");
+
+            // ══════════════ Odak oturumları ══════════════
+            u.NewTaskTitle = "Focus me #study";
+            await u.AddTaskCommand.ExecuteAsync(null);
+            var uf = u.ActiveTasks.First(t => t.Title == "Focus me");
+            await u.StartFocusCommand.ExecuteAsync(uf);
+            Check(u.StopFocusAt(DateTime.Now.AddMinutes(10)), "focus: 10 min session credited");
+            u.ShowFocusCommand.Execute(null);
+            Check(u.IsFocusView && u.FocusByCategory.Count == 1 && u.FocusByCategory[0].Label == "#study"
+                && u.FocusByCategory[0].ValueText == Localizer.Instance.Format("Fmt_Minutes", 10) && u.FocusByTask[0].Label == uf.Code + " Focus me",
+                "focus: tab shows category and task: " + string.Join(",", u.FocusByCategory.Select(s => s.Label + "=" + s.ValueText)));
+            Check(u.FocusTiles[0].Value == Localizer.Instance.Format("Fmt_Minutes", 10) && u.FocusTiles[1].Value == "1", "focus: total and session tiles");
+            u.FlushNow();
+            var reloaded = await StorageService.ReadFileAsync(Path.Combine(dir, "undo.json"));
+            Check(reloaded.SchemaVersion == 4 && reloaded.FocusSessions.Count == 1 && reloaded.FocusSessions[0].Category == "study"
+                && reloaded.FocusSessions[0].Minutes == 10, "focus: session persisted (schema v4)");
+
+            var fToday = DateOnly.FromDateTime(DateTime.Today);
+            var sessions = new List<FocusSession>
+            {
+                new() { Start = DateTime.Today.AddHours(9), Minutes = 30, TaskId = Guid.NewGuid(), TaskNumber = 1, Title = "A", Category = "Work" },
+                new() { Start = DateTime.Today.AddDays(-2).AddHours(9), Minutes = 50, TaskId = Guid.NewGuid(), TaskNumber = 2, Title = "B", Category = "work" },
+                new() { Start = DateTime.Today.AddDays(-3).AddHours(9), Minutes = 20, TaskId = Guid.NewGuid(), TaskNumber = 3, Title = "C" },
+                new() { Start = DateTime.Today.AddDays(-10).AddHours(9), Minutes = 99, TaskId = Guid.NewGuid(), TaskNumber = 4, Title = "Old", Category = "x" },
+            };
+            var (fTiles, fCats, fTasks) = InsightsBuilder.BuildFocus(sessions, fToday, 7, Localizer.Instance, m => m + "m");
+            Check(fTiles[0].Value == "100m" && fTiles[0].Sub.Contains("99m") && fTiles[1].Value == "3", "focus builder: totals, sessions, previous period");
+            Check(fCats.Count == 2 && fCats[0].Label.Equals("#Work", StringComparison.OrdinalIgnoreCase) && fCats[0].ValueText == "80m" && fCats[0].IsTop
+                && fCats[1].ValueText == "20m", "focus builder: categories merged case-insensitively, sorted");
+            Check(fTasks.Count == 3 && fTasks[0].Label == "#002 B" && fTasks.All(s => s.Label != "#004 Old"), "focus builder: by task within range");
+
+            // ══════════════ Yedekler ══════════════
+            string bkData = Path.Combine(dir, "bk", "cyber_data.json");
+            var backups = new BackupService(bkData);
+            byte[] payload = StorageService.Serialize(new CyberData());
+            for (int i = 0; i < 9; i++)
+            {
+                await backups.CreateDailyAsync(payload, fToday.AddDays(-i));
+            }
+
+            Check(backups.List().Count(b => b.IsDaily) == BackupService.KeepDaily
+                && backups.List().All(b => b.FileName != BackupService.DailyFileName(fToday.AddDays(-8))), "backup: keeps newest 7 daily backups");
+            Check(await backups.CreateDailyAsync(payload, fToday) is null, "backup: once per day");
+            for (int i = 0; i < 7; i++)
+            {
+                await backups.CreateSafetyAsync(payload, DateTime.Now.AddSeconds(i), "manual");
+            }
+
+            Check(backups.List().Count(b => !b.IsDaily) == BackupService.KeepSafety, "backup: keeps 5 safety backups");
+            Check(!backups.Contains(Path.Combine(dir, "bk", "cyber_data.json"))
+                && !backups.Contains(Path.Combine(backups.BackupDirectory, "..", "cyber_data-x.json"))
+                && backups.Contains(backups.List()[0].FullPath), "backup: only files inside backup folder are accepted");
+            bool rejected = false;
+            try { await backups.CreateSafetyAsync(payload, DateTime.Now, "..\\evil"); } catch (ArgumentException) { rejected = true; }
+            Check(rejected, "backup: reason cannot inject a path");
+
+            // VM: açılışta günlük yedek, geri yükleme, içe/dışa aktarma
+            string vmData = Path.Combine(dir, "vmdata", "cyber_data.json");
+            var seed = new CyberData();
+            seed.Tasks.Add(new CyberTask { Number = 1, Title = "Original" });
+            seed.NextTaskNumber = 2;
+            await StorageService.WriteAtomicAsync(vmData, StorageService.Serialize(seed));
+            var dialogs = new FakeDialogs();
+            var dv = new MainViewModel(new StorageService(vmData), dialogs: dialogs);
+            await dv.InitializeAsync();
+            await Task.Delay(300);
+            var dvBackups = new BackupService(vmData);
+            Check(dvBackups.List().Any(b => b.FileName == BackupService.DailyFileName(fToday)), "backup: daily backup taken on launch");
+
+            var other = new CyberData();
+            other.Tasks.Add(new CyberTask { Number = 1, Title = "From backup 1" });
+            other.Tasks.Add(new CyberTask { Number = 2, Title = "From backup 2", IsCompleted = true, CompletedAt = DateTime.Now });
+            string otherPath = await dvBackups.CreateSafetyAsync(StorageService.Serialize(other), DateTime.Now.AddMinutes(-5), "test");
+            dv.OpenDataCommand.Execute(null);
+            var otherInfo = dv.Backups.First(b => b.FullPath == otherPath);
+
+            dialogs.ConfirmResult = false;
+            await dv.RestoreBackupCommand.ExecuteAsync(otherInfo);
+            Check(dv.ActiveTasks.Single().Title == "Original" && dialogs.LastConfirm.Contains("2"), "restore: declined -> nothing changes");
+
+            dialogs.ConfirmResult = true;
+            u.NewTaskTitle = string.Empty;
+            dv.NewTaskTitle = "Undo me later";
+            await dv.AddTaskCommand.ExecuteAsync(null);
+            await dv.RestoreBackupCommand.ExecuteAsync(otherInfo);
+            Check(dv.ActiveTasks.Single().Title == "From backup 1" && dv.CompletedTasks.Single().Title == "From backup 2", "restore: data replaced");
+            Check(!dv.CanUndo, "restore: undo history cleared (would point to old data)");
+            Check(File.ReadAllText(vmData).Contains("From backup 1"), "restore: written to disk immediately");
+            Check(dvBackups.List().Any(b => b.FileName.Contains("before-restore")) && !dv.IsDataOpen, "restore: safety backup of previous state, panel closed");
+            var safetyFile = dvBackups.List().First(b => b.FileName.Contains("before-restore"));
+            Check((await StorageService.ReadFileAsync(safetyFile.FullPath)).Tasks.Any(t => t.Title == "Undo me later"), "restore: safety backup contains the replaced data");
+
+            string exportPath = Path.Combine(dir, "export", "out.json");
+            dialogs.SavePath = exportPath;
+            await dv.ExportJsonCommand.ExecuteAsync(null);
+            Check((await StorageService.ReadFileAsync(exportPath)).Tasks.Count == 2, "export: JSON round-trips");
+            dialogs.SavePath = Path.Combine(dir, "export", "out.csv");
+            await dv.ExportCsvCommand.ExecuteAsync(null);
+            byte[] csvBytes = File.ReadAllBytes(dialogs.SavePath);
+            Check(csvBytes.Length > 3 && csvBytes[0] == 0xEF && csvBytes[1] == 0xBB && csvBytes[2] == 0xBF, "export: CSV has UTF-8 BOM for Excel");
+
+            string badImport = Path.Combine(dir, "export", "bad.json");
+            File.WriteAllText(badImport, "{ not json");
+            dialogs.OpenPath = badImport;
+            await dv.ImportJsonCommand.ExecuteAsync(null);
+            Check(dv.ErrorMessage is not null && dv.ActiveTasks.Single().Title == "From backup 1", "import: invalid file -> error, data untouched");
+            dv.DismissErrorCommand.Execute(null);
+
+            seed.Tasks.Add(new CyberTask { Number = 2, Title = "Imported 2" });
+            string goodImport = Path.Combine(dir, "export", "good.json");
+            await StorageService.WriteAtomicAsync(goodImport, StorageService.Serialize(seed));
+            dialogs.OpenPath = goodImport;
+            await dv.ImportJsonCommand.ExecuteAsync(null);
+            Check(dv.ActiveTasks.Count == 2 && dv.ActiveTasks.Any(t => t.Title == "Imported 2")
+                && dvBackups.List().Any(b => b.FileName.Contains("before-import")), "import: replaces data after safety backup");
+
+            // ══════════════ CSV / ICS ══════════════
+            var tr = System.Globalization.CultureInfo.GetCultureInfo("tr-TR");
+            var csvTasks = new[]
+            {
+                new CyberTask { Number = 7, Title = "=HYPERLINK(\"x\")", Category = "a;b", EstimatedHours = 0.5, Notes = "line1\nline2" },
+            };
+            string csv = DataExporter.ToCsv(csvTasks, tr);
+            string row = csv.Split("\r\n")[1];
+            Check(csv.StartsWith("Code;Title;"), "csv: list separator from culture (tr-TR -> ;)");
+            Check(row.Contains("\"'=HYPERLINK(\"\"x\"\")\"") && row.Contains("\"a;b\"") && row.Contains(";0,5;"), "csv: formula neutralized, quoting, decimal comma: " + row);
+            Check(csv.Contains("\"line1\nline2\""), "csv: multi-line notes quoted");
+
+            var icsDue = new CyberTask
+            {
+                Number = 9, Title = "Toplantı, plan; özet", DueAt = new DateTime(2026, 11, 23, 14, 0, 0), HasDueTime = true, EstimatedHours = 1.5,
+                ReminderMinutesBefore = 15, Recurrence = Recurrence.SelectedDays, RepeatDays = WeekDays.Monday | WeekDays.Wednesday, Category = "iş",
+                Notes = new string('ğ', 80), Subtasks = [new SubTask { Title = "hazırlık", IsDone = true }],
+            };
+            var icsAllDay = new CyberTask { Number = 10, Title = "Fatura", DueAt = new DateTime(2026, 11, 24), ReminderMinutesBefore = 60 };
+            var icsDone = new CyberTask { Number = 11, Title = "Done", DueAt = new DateTime(2026, 11, 24), IsCompleted = true };
+            var icsNoDate = new CyberTask { Number = 12, Title = "No date" };
+            string ics = DataExporter.ToIcs([icsDue, icsAllDay, icsDone, icsNoDate], new DateTime(2026, 11, 10, 12, 0, 0, DateTimeKind.Utc));
+            string unfolded = ics.Replace("\r\n ", string.Empty);
+            Check(ics.StartsWith("BEGIN:VCALENDAR\r\n") && ics.TrimEnd().EndsWith("END:VCALENDAR") && !ics.Replace("\r\n", "").Contains('\n'), "ics: CRLF lines, calendar wrapper");
+            Check(unfolded.Contains("DTSTART:20261123T140000") && unfolded.Contains("DTEND:20261123T153000"), "ics: timed event with estimated duration");
+            Check(unfolded.Contains("RRULE:FREQ=WEEKLY;BYDAY=MO,WE") && unfolded.Contains("TRIGGER:-PT15M"), "ics: selected-days RRULE and reminder");
+            Check(unfolded.Contains("SUMMARY:#009 Toplantı\\, plan\\; özet") && unfolded.Contains("CATEGORIES:iş"), "ics: text escaping");
+            Check(unfolded.Contains("DTSTART;VALUE=DATE:20261124") && unfolded.Contains("DTEND;VALUE=DATE:20261125") && unfolded.Contains("TRIGGER:PT480M"),
+                "ics: all-day event, reminder relative to 09:00");
+            Check(!unfolded.Contains("Done") && !unfolded.Contains("No date") && unfolded.Split("BEGIN:VEVENT").Length == 3, "ics: only active dated tasks");
+            Check(ics.Split("\r\n").All(l => System.Text.Encoding.UTF8.GetByteCount(l) <= 75) && unfolded.Contains(new string('ğ', 80)),
+                "ics: lines folded at 75 octets without splitting UTF-8 characters");
+
+            // ══════════════ Otomatik güncelleme ══════════════
+            Check(UpdateInstaller.ParseChecksum("ABCDEF0123456789abcdef0123456789ABCDEF0123456789abcdef0123456789  CALABATICA-win-x64.zip\n")
+                == "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789", "update: checksum file parsed");
+            Check(UpdateInstaller.IsAllowedDownloadUri(new Uri("https://objects.githubusercontent.com/x"))
+                && !UpdateInstaller.IsAllowedDownloadUri(new Uri("http://github.com/x"))
+                && !UpdateInstaller.IsAllowedDownloadUri(new Uri("https://github.com.evil.com/x"))
+                && !UpdateInstaller.IsAllowedDownloadUri(new Uri("https://evilgithubusercontent.com/x")), "update: only https GitHub hosts");
+
+            string realExe = Path.Combine(AppContext.BaseDirectory, "CALABATICA.exe"); // ürün adı/sürümü gömülü gerçek exe (1.0.0)
+            string installDir = Path.Combine(dir, "install");
+            Directory.CreateDirectory(installDir);
+            string installedExe = Path.Combine(installDir, "CALABATICA.exe");
+            File.WriteAllText(installedExe, "old build");
+            Check(!new UpdateInstaller(installedExe).CanSelfUpdate, "update: not an installed copy without Uninstall.exe");
+            File.WriteAllText(Path.Combine(installDir, "Uninstall.exe"), "marker");
+
+            byte[] goodZip = MakeZip(("CALABATICA.exe", File.ReadAllBytes(realExe)));
+            string goodSha = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(goodZip));
+            var assetUri = new Uri("https://github.com/o/r/releases/download/v1.0.0/CALABATICA-win-x64.zip");
+            var shaUri = new Uri("https://github.com/o/r/releases/download/v1.0.0/CALABATICA-win-x64.zip.sha256");
+            var release = new ReleaseInfo(new Version(1, 0, 0), "v1.0.0", new Uri("https://github.com/o/r/releases/tag/v1.0.0"), assetUri, shaUri, null);
+
+            async Task<string?> TryStage(FakeHttp http, ReleaseInfo rel)
+            {
+                try { return await new UpdateInstaller(installedExe, http).DownloadAndStageAsync(rel); }
+                catch (InvalidDataException ex) { return "REJECTED:" + ex.Message; }
+            }
+
+            var badSha = new FakeHttp { [assetUri] = goodZip, [shaUri] = System.Text.Encoding.ASCII.GetBytes(new string('0', 64)) };
+            string? stagedBad = await TryStage(badSha, release);
+            Check(stagedBad?.StartsWith("REJECTED:SHA256") == true && !File.Exists(installedExe + ".new") && !File.Exists(Path.Combine(installDir, "CALABATICA.update.zip")),
+                "update: SHA256 mismatch rejected, no files left: " + stagedBad);
+
+            byte[] extraZip = MakeZip(("CALABATICA.exe", File.ReadAllBytes(realExe)), ("..\\evil.dll", [1, 2, 3]));
+            var extra = new FakeHttp { [assetUri] = extraZip, [shaUri] = System.Text.Encoding.ASCII.GetBytes(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(extraZip))) };
+            Check((await TryStage(extra, release))?.StartsWith("REJECTED:Unexpected update package content") == true, "update: package with extra/traversal entries rejected");
+
+            var redirect = new FakeHttp { [assetUri] = goodZip, [shaUri] = System.Text.Encoding.ASCII.GetBytes(goodSha), RedirectTo = new Uri("https://evil.example.com/x.zip") };
+            Check((await TryStage(redirect, release))?.StartsWith("REJECTED:Redirected") == true, "update: redirect to foreign host rejected");
+
+            var good = new FakeHttp { [assetUri] = goodZip, [shaUri] = System.Text.Encoding.ASCII.GetBytes(goodSha + "  CALABATICA-win-x64.zip") };
+            Check((await TryStage(good, release with { Version = new Version(9, 9, 9) }))?.StartsWith("REJECTED:Version mismatch") == true, "update: version mismatch rejected");
+
+            string json = $$"""
+                {"tag_name":"v1.0.0","html_url":"https://github.com/o/r/releases/tag/v1.0.0","draft":false,"prerelease":false,
+                 "assets":[{"name":"CALABATICA-win-x64.zip","browser_download_url":"{{assetUri}}"},
+                           {"name":"CALABATICA-win-x64.zip.sha256","browser_download_url":"{{shaUri}}"}]}
+                """;
+            var updVm = new MainViewModel(new StorageService(Path.Combine(dir, "upd.json")),
+                new UpdateService("o/r", new Version(0, 9, 0), _ => Task.FromResult(json)),
+                installer: new UpdateInstaller(installedExe, good));
+            await updVm.InitializeAsync();
+            string? restartedWith = null;
+            updVm.RestartRequested += (_, path) => restartedWith = path;
+            await updVm.CheckUpdatesCommand.ExecuteAsync(null);
+            Check(updVm.CanInstallUpdate && updVm.Toasts.Any(t => t.HasAction && t.ActionLabel == Localizer.Instance["Update_Install"]), "update: install offered (button + toast)");
+            await updVm.InstallUpdateCommand.ExecuteAsync(null);
+            Check(restartedWith == installedExe && File.ReadAllBytes(installedExe).SequenceEqual(File.ReadAllBytes(realExe))
+                && File.ReadAllText(installedExe + ".old") == "old build", "update: verified exe swapped in, old kept, restart requested");
+            UpdateInstaller.CleanupLeftovers(installedExe);
+            Check(!File.Exists(installedExe + ".old"), "update: leftovers cleaned on next launch");
+
+            var notInstalled = new MainViewModel(new StorageService(Path.Combine(dir, "upd2.json")),
+                new UpdateService("o/r", new Version(0, 9, 0), _ => Task.FromResult(json)),
+                installer: new UpdateInstaller(Path.Combine(dir, "CALABATICA.exe"), good));
+            await notInstalled.InitializeAsync();
+            await notInstalled.CheckUpdatesCommand.ExecuteAsync(null);
+            Check(notInstalled.HasUpdate && !notInstalled.CanInstallUpdate, "update: dev build only offers the release page");
+
+            Check(Localizer.MissingKeys().Count == 0, "TR/EN key sets identical after new features: " + string.Join(",", Localizer.MissingKeys()));
+
             // ── Bilgi (test değil): 2500 görevlik veride bir kaydın maliyeti ──
             var big = new CyberData();
             for (int i = 1; i <= 2500; i++)
@@ -408,3 +692,48 @@ thread.Start(); thread.Join();
 Directory.Delete(dir, true);
 Console.WriteLine(failures == 0 ? "ALL PASSED" : $"{failures} FAILED");
 return failures;
+
+static byte[] MakeZip(params (string Name, byte[] Content)[] entries)
+{
+    using var memory = new MemoryStream();
+    using (var archive = new System.IO.Compression.ZipArchive(memory, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+    {
+        foreach (var (name, content) in entries)
+        {
+            using var stream = archive.CreateEntry(name).Open();
+            stream.Write(content);
+        }
+    }
+
+    return memory.ToArray();
+}
+
+/// <summary>Dosya diyalogları yerine: önceden belirlenen yol / onay yanıtı.</summary>
+sealed class FakeDialogs : IFileDialogs
+{
+    public string? SavePath { get; set; }
+    public string? OpenPath { get; set; }
+    public bool ConfirmResult { get; set; } = true;
+    public string LastConfirm { get; private set; } = string.Empty;
+
+    public string? PickSavePath(string defaultFileName, string filter) => SavePath;
+    public string? PickOpenPath(string filter) => OpenPath;
+    public bool Confirm(string message) { LastConfirm = message; return ConfirmResult; }
+}
+
+/// <summary>Ağ yerine: adres → içerik. RedirectTo verilirse yanıt o adrese yönlendirilmiş gibi görünür.</summary>
+sealed class FakeHttp : System.Net.Http.HttpMessageHandler
+{
+    private readonly Dictionary<Uri, byte[]> _content = [];
+    public Uri? RedirectTo { get; set; }
+    public byte[] this[Uri uri] { set => _content[uri] = value; }
+
+    protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var response = _content.TryGetValue(request.RequestUri!, out var bytes)
+            ? new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new System.Net.Http.ByteArrayContent(bytes) }
+            : new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+        response.RequestMessage = RedirectTo is null ? request : new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, RedirectTo);
+        return Task.FromResult(response);
+    }
+}

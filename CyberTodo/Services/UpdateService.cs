@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
@@ -160,12 +161,16 @@ public sealed partial class UpdateService
             return false;
         }
 
-        int major = int.Parse(match.Groups[1].Value);
-        int minor = match.Groups[2].Success ? int.Parse(match.Groups[2].Value) : 0;
-        int patch = match.Groups[3].Success ? int.Parse(match.Groups[3].Value) : 0;
+        int major = Part(match.Groups[1]);
+        int minor = Part(match.Groups[2]);
+        int patch = Part(match.Groups[3]);
         version = new Version(major, minor, patch);
         return true;
     }
+
+    /// <summary>Yalnızca ASCII rakamlar (regex [0-9] ile garanti), culture'dan bağımsız; eşleşmeyen grup 0.</summary>
+    private static int Part(Group group) =>
+        group.Success ? int.Parse(group.Value, NumberStyles.None, CultureInfo.InvariantCulture) : 0;
 
     public static Version ReadCurrentVersion()
     {
@@ -204,7 +209,7 @@ public sealed partial class UpdateService
         return client;
     }
 
-    [GeneratedRegex(@"^(\d{1,5})(?:\.(\d{1,5}))?(?:\.(\d{1,5}))?$")]
+    [GeneratedRegex(@"^([0-9]{1,5})(?:\.([0-9]{1,5}))?(?:\.([0-9]{1,5}))?$")]
     private static partial Regex VersionRegex();
 
     [GeneratedRegex(@"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$")]

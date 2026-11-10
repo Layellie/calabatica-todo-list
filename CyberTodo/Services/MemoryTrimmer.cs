@@ -14,9 +14,11 @@ namespace CyberTodo.Services;
 public static class MemoryTrimmer
 {
     [DllImport("psapi.dll", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static extern bool EmptyWorkingSet(IntPtr process);
 
     [DllImport("kernel32.dll")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static extern IntPtr GetCurrentProcess();
 
     /// <summary>Kırpar. Çalışma kümesi boşaltılamazsa false (GC yine de yapılmıştır); hiçbir zaman fırlatmaz.</summary>

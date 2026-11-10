@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics;
 using System.Media;
 using System.Runtime.InteropServices;
@@ -91,7 +92,10 @@ public static class Program
             new RegistryStartupRegistration(),
             new WpfFileDialogs(static () => Application.Current?.Windows.OfType<Window>().FirstOrDefault(static w => w.IsActive)),
             new UpdateInstaller());
+        viewModel.BeginPreload(); // dosya okuma/JSON, pencere XAML'i kurulurken arka planda
+#pragma warning disable CA2000 // TrayIconHost sahipliği MainWindow'a geçer (OnClosed / ExitApplication / HandleFatalError'da Dispose edilir)
         var window = new MainWindow(viewModel, new TrayIconHost(), startHidden);
+#pragma warning restore CA2000
 
         // UI thread'inde yakalanmamış hata: rapor yaz, bekleyen kaydı diske indir, kullanıcıya söyle, düzgün kapan.
         // Bilinmeyen bir hatadan sonra çalışmaya devam etmek veriyi tutarsız bırakabilir; bu yüzden devam edilmez.
@@ -216,6 +220,7 @@ public partial class MainWindow : Window
     private bool _handlingFatalError;
 
     /// <summary>Yakalanmamış UI hatası: rapor + acil kayıt + bilgi kutusu + kapanış. İkinci hata gelirse doğrudan kapanır.</summary>
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Çökme sınırı: acil kayıt başarısız olsa bile asıl hata raporu ve kullanıcı bilgilendirmesi engellenmemeli.")]
     public void HandleFatalError(Exception exception)
     {
         if (_handlingFatalError)
@@ -846,6 +851,7 @@ public partial class MainWindow : Window
         }
 
         [DllImport("user32.dll")]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool FlashWindowEx(ref FlashWInfo info);
 

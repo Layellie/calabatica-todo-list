@@ -98,6 +98,9 @@ public sealed class TrayIconHost : IDisposable
         Localizer.Instance.PropertyChanged -= OnLanguageChanged;
         _icon.Visible = false; // aksi halde simge, fare üzerine gelene kadar tepside "hayalet" kalır
         _icon.Dispose();
+        _showItem.Dispose();
+        _miniItem.Dispose();
+        _exitItem.Dispose();
         _menu.Dispose();
         _trayIcon.Dispose();
     }

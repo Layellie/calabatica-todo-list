@@ -840,48 +840,16 @@
                                 </Grid>
 
                                 <!-- ══ İSTATİSTİK ══ -->
-                                <views:StatsPanel Grid.Row="1" Margin="0,16,0,0">
-                                    <views:StatsPanel.Visibility>
-                                        <Binding Path="IsStatsView">
-                                            <Binding.Converter>
-                                                <BooleanToVisibilityConverter />
-                                            </Binding.Converter>
-                                        </Binding>
-                                    </views:StatsPanel.Visibility>
-                                </views:StatsPanel>
+                                <views:DeferredView Grid.Row="1" Margin="0,16,0,0" ViewType="{x:Type views:StatsPanel}" IsOpen="{Binding IsStatsView}" />
 
                                 <!-- ══ ODAK ══ -->
-                                <views:FocusStatsPanel Grid.Row="1" Margin="0,16,0,0">
-                                    <views:FocusStatsPanel.Visibility>
-                                        <Binding Path="IsFocusView">
-                                            <Binding.Converter>
-                                                <BooleanToVisibilityConverter />
-                                            </Binding.Converter>
-                                        </Binding>
-                                    </views:FocusStatsPanel.Visibility>
-                                </views:FocusStatsPanel>
+                                <views:DeferredView Grid.Row="1" Margin="0,16,0,0" ViewType="{x:Type views:FocusStatsPanel}" IsOpen="{Binding IsFocusView}" />
 
                                 <!-- ══ ALIŞKANLIKLAR ══ (tekrarlayan görev zincirleri: seri + son 28 gün şeridi) -->
-                                <views:HabitsPanel Grid.Row="1" Margin="0,14,0,0">
-                                    <views:HabitsPanel.Visibility>
-                                        <Binding Path="IsHabitsView">
-                                            <Binding.Converter>
-                                                <BooleanToVisibilityConverter />
-                                            </Binding.Converter>
-                                        </Binding>
-                                    </views:HabitsPanel.Visibility>
-                                </views:HabitsPanel>
+                                <views:DeferredView Grid.Row="1" Margin="0,14,0,0" ViewType="{x:Type views:HabitsPanel}" IsOpen="{Binding IsHabitsView}" />
 
                                 <!-- ══ TAKVİM ══ -->
-                                <views:CalendarPanel Grid.Row="1" Margin="0,12,0,0">
-                                    <views:CalendarPanel.Visibility>
-                                        <Binding Path="IsCalendarView">
-                                            <Binding.Converter>
-                                                <BooleanToVisibilityConverter />
-                                            </Binding.Converter>
-                                        </Binding>
-                                    </views:CalendarPanel.Visibility>
-                                </views:CalendarPanel>
+                                <views:DeferredView Grid.Row="1" Margin="0,12,0,0" ViewType="{x:Type views:CalendarPanel}" IsOpen="{Binding IsCalendarView}" />
 
                                 <!-- ══ SÜTUN GRAFİĞİ (30/7 gün) ══ -->
                                 <Grid Grid.Row="1" Margin="0,30,0,0">
@@ -1119,47 +1087,15 @@
         </Grid>
 
         <!-- ═════════════ ŞABLONLAR ═════════════ -->
-        <views:TemplatesOverlay>
-            <views:TemplatesOverlay.Visibility>
-                <Binding Path="IsTemplatesOpen">
-                    <Binding.Converter>
-                        <BooleanToVisibilityConverter />
-                    </Binding.Converter>
-                </Binding>
-            </views:TemplatesOverlay.Visibility>
-        </views:TemplatesOverlay>
+        <views:DeferredView ViewType="{x:Type views:TemplatesOverlay}" IsOpen="{Binding IsTemplatesOpen}" />
 
         <!-- ═════════════ AYARLAR ═════════════ -->
-        <views:SettingsOverlay>
-            <views:SettingsOverlay.Visibility>
-                <Binding Path="IsSettingsOpen">
-                    <Binding.Converter>
-                        <BooleanToVisibilityConverter />
-                    </Binding.Converter>
-                </Binding>
-            </views:SettingsOverlay.Visibility>
-        </views:SettingsOverlay>
+        <views:DeferredView ViewType="{x:Type views:SettingsOverlay}" IsOpen="{Binding IsSettingsOpen}" />
 
         <!-- ═════════════ VERİ & YEDEK ═════════════ -->
-        <views:DataOverlay>
-            <views:DataOverlay.Visibility>
-                <Binding Path="IsDataOpen">
-                    <Binding.Converter>
-                        <BooleanToVisibilityConverter />
-                    </Binding.Converter>
-                </Binding>
-            </views:DataOverlay.Visibility>
-        </views:DataOverlay>
+        <views:DeferredView ViewType="{x:Type views:DataOverlay}" IsOpen="{Binding IsDataOpen}" />
 
         <!-- ═════════════ İLK AÇILIŞ REHBERİ ═════════════ -->
-        <views:OnboardingOverlay>
-            <views:OnboardingOverlay.Visibility>
-                <Binding Path="IsOnboardingOpen">
-                    <Binding.Converter>
-                        <BooleanToVisibilityConverter />
-                    </Binding.Converter>
-                </Binding>
-            </views:OnboardingOverlay.Visibility>
-        </views:OnboardingOverlay>
+        <views:DeferredView ViewType="{x:Type views:OnboardingOverlay}" IsOpen="{Binding IsOnboardingOpen}" />
     </Grid>
 </Window>

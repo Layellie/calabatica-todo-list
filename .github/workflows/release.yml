@@ -36,10 +36,13 @@ jobs:
 
       - name: Güncelleme paketi + SHA256
         shell: pwsh
+        run: ./scripts/package-update.ps1 -AppExe artifacts/app/CALABATICA.exe -OutDir .
+
+      - name: Yayın öncesi doğrulama (gerçek güncelleyici koduyla)
+        shell: pwsh
         run: |
-          Compress-Archive -Path artifacts/app/CALABATICA.exe -DestinationPath CALABATICA-win-x64.zip
-          $hash = (Get-FileHash CALABATICA-win-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  CALABATICA-win-x64.zip" | Out-File CALABATICA-win-x64.zip.sha256 -Encoding ascii
+          dotnet run --project tests/CalabaticaTests/CalabaticaTests.csproj -c Release -- verify-package --dir . --setup "artifacts/CALABATICA-Setup-$env:VERSION.exe" --version $env:VERSION
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: GitHub Release oluştur
         shell: pwsh

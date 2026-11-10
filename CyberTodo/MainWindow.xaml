@@ -583,7 +583,7 @@
 
         <DataTemplate x:Key="SubtaskRowTemplate" DataType="{x:Type models:SubTask}">
             <StackPanel Margin="0,4,0,0" Orientation="Horizontal">
-                <Button Style="{StaticResource MiniCheckButton}"
+                <Button Style="{StaticResource MiniCheckButton}" AutomationProperties.Name="{Binding Title}"
                         VerticalAlignment="Center"
                         Command="{Binding DataContext.ToggleSubtaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                         CommandParameter="{Binding}">
@@ -631,7 +631,7 @@
                             Style="{StaticResource TaskCheckButton}"
                             Margin="0,0,18,0"
                             VerticalAlignment="Center"
-                            ToolTip="{loc:Tr Tip_Complete}"
+                            AutomationProperties.Name="{loc:Tr Tip_Complete}" ToolTip="{loc:Tr Tip_Complete}"
                             Command="{Binding DataContext.CompleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding}" />
                 </StackPanel>
@@ -658,13 +658,13 @@
                            Foreground="{StaticResource GreenBrush}" />
 
                 <StackPanel x:Name="Actions" Grid.Column="3" Margin="8,0,0,0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button x:Name="FocusBtn" Style="{StaticResource RowIconButton}" Content="▶" ToolTip="{loc:Tr Tip_Focus}"
+                    <Button x:Name="FocusBtn" Style="{StaticResource RowIconButton}" Content="▶" AutomationProperties.Name="{loc:Tr Tip_Focus}" ToolTip="{loc:Tr Tip_Focus}"
                             Command="{Binding DataContext.StartFocusCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding}" />
-                    <Button Style="{StaticResource RowIconButton}" Content="✎" ToolTip="{loc:Tr Tip_Edit}"
+                    <Button Style="{StaticResource RowIconButton}" Content="✎" AutomationProperties.Name="{loc:Tr Tip_Edit}" ToolTip="{loc:Tr Tip_Edit}"
                             Command="{Binding DataContext.EditTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding}" />
-                    <Button Style="{StaticResource RowDeleteButton}" Content="✕" ToolTip="{loc:Tr Tip_Delete}"
+                    <Button Style="{StaticResource RowDeleteButton}" Content="✕" AutomationProperties.Name="{loc:Tr Tip_Delete}" ToolTip="{loc:Tr Tip_Delete}"
                             Command="{Binding DataContext.DeleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding}" />
                 </StackPanel>
@@ -693,7 +693,7 @@
                             Padding="6,0"
                             FontSize="13"
                             Foreground="{DynamicResource AxisTextBrush}"
-                            ToolTip="{loc:Tr Tip_Subtasks}"
+                            AutomationProperties.Name="{loc:Tr Tip_Subtasks}" ToolTip="{loc:Tr Tip_Subtasks}"
                             Command="{Binding DataContext.ToggleExpandCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding}">
                         <TextBlock Margin="4,0">
@@ -789,6 +789,7 @@
                     <Setter TargetName="FocusBtn" Property="Content" Value="■" />
                     <Setter TargetName="FocusBtn" Property="Foreground" Value="{DynamicResource YellowBrush}" />
                     <Setter TargetName="FocusBtn" Property="ToolTip" Value="{loc:Tr Tip_StopFocus}" />
+                    <Setter TargetName="FocusBtn" Property="AutomationProperties.Name" Value="{loc:Tr Tip_StopFocus}" />
                 </DataTrigger>
                 <Trigger SourceName="Row" Property="IsMouseOver" Value="True">
                     <Setter TargetName="DragHandle" Property="Foreground" Value="{DynamicResource CyanBrush}" />
@@ -815,7 +816,7 @@
                 <Button Style="{StaticResource DoneCheckButton}"
                         Margin="0,0,18,0"
                         VerticalAlignment="Center"
-                        ToolTip="{loc:Tr Tip_Restore}"
+                        AutomationProperties.Name="{loc:Tr Tip_Restore}" ToolTip="{loc:Tr Tip_Restore}"
                         Command="{Binding DataContext.RestoreTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                         CommandParameter="{Binding}" />
                 <TextBlock Grid.Column="1"
@@ -833,7 +834,7 @@
                            Foreground="{StaticResource GreyBrush}"
                            Text="{Binding CompletedAt, StringFormat='[✓ {0:dd.MM HH:mm}]'}" />
                 <Button x:Name="DeleteBtn" Grid.Column="3" Margin="8,0,0,0"
-                        Style="{StaticResource RowDeleteButton}" Content="✕" ToolTip="{loc:Tr Tip_Delete}"
+                        Style="{StaticResource RowDeleteButton}" Content="✕" AutomationProperties.Name="{loc:Tr Tip_Delete}" ToolTip="{loc:Tr Tip_Delete}"
                         Command="{Binding DataContext.DeleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                         CommandParameter="{Binding}" />
             </Grid>
@@ -927,7 +928,7 @@
                             Content="{Binding ActionLabel}"
                             Command="{Binding DataContext.RunToastActionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding}" />
-                    <Button Grid.Column="2" Style="{StaticResource IconButton}" Content="✕" ToolTip="{loc:Tr Tip_Dismiss}"
+                    <Button Grid.Column="2" Style="{StaticResource IconButton}" Content="✕" AutomationProperties.Name="{loc:Tr Tip_Dismiss}" ToolTip="{loc:Tr Tip_Dismiss}"
                             Command="{Binding DataContext.DismissToastCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding}" />
                 </Grid>
@@ -950,12 +951,12 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <Button Style="{StaticResource MiniCheckButton}" VerticalAlignment="Center" Click="EditorSubtaskToggle_Click">
+                <Button Style="{StaticResource MiniCheckButton}" AutomationProperties.Name="{Binding Title}" VerticalAlignment="Center" Click="EditorSubtaskToggle_Click">
                     <Path x:Name="SubCheck" Data="M3,9 L7,13 L14,4" Stroke="{DynamicResource CyanBrush}" StrokeThickness="2" Visibility="Hidden" />
                 </Button>
                 <TextBlock x:Name="SubTitle" Grid.Column="1" Margin="10,0" VerticalAlignment="Center" FontSize="14"
                            Foreground="{DynamicResource CyanBrush}" TextTrimming="CharacterEllipsis" Text="{Binding Title}" />
-                <Button Grid.Column="2" Style="{StaticResource DeleteIconButton}" Content="✕" ToolTip="{loc:Tr Tip_Delete}"
+                <Button Grid.Column="2" Style="{StaticResource DeleteIconButton}" Content="✕" AutomationProperties.Name="{loc:Tr Tip_Delete}" ToolTip="{loc:Tr Tip_Delete}"
                         Command="{Binding DataContext.Editor.RemoveSubtaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                         CommandParameter="{Binding}" />
             </Grid>
@@ -1074,7 +1075,7 @@
                             <TextBlock Grid.Column="1" Margin="14,0,10,0" VerticalAlignment="Center" FontSize="20" FontWeight="Bold"
                                        Foreground="{DynamicResource YellowBrush}" Text="{Binding FocusRemainingText}" />
                             <Button Grid.Column="2" Style="{StaticResource IconButton}" Content="■" Foreground="{DynamicResource YellowBrush}"
-                                    ToolTip="{loc:Tr Tip_StopFocus}" Command="{Binding StopFocusCommand}" />
+                                    AutomationProperties.Name="{loc:Tr Tip_StopFocus}" ToolTip="{loc:Tr Tip_StopFocus}" Command="{Binding StopFocusCommand}" />
                             <ProgressBar Grid.Row="1" Grid.ColumnSpan="3" Height="5" Margin="0,5,0,0" Style="{StaticResource NeonProgress}"
                                          Foreground="{DynamicResource YellowBrush}" Maximum="1" Value="{Binding FocusProgress, Mode=OneWay}" />
                         </Grid>
@@ -1092,7 +1093,7 @@
                             </TextBlock>
                             <!-- GitHub'da daha yeni sürüm varsa: ▲ v1.1 (tıkla → yayın sayfası) -->
                             <Button Margin="12,0,0,4" VerticalAlignment="Bottom" Style="{StaticResource SmallButton}"
-                                    Content="{Binding UpdateBadgeText}" ToolTip="{loc:Tr Tip_UpdateAvailable}"
+                                    Content="{Binding UpdateBadgeText}" AutomationProperties.Name="{loc:Tr Tip_UpdateAvailable}" ToolTip="{loc:Tr Tip_UpdateAvailable}"
                                     Command="{Binding OpenReleasePageCommand}">
                                 <Button.Visibility>
                                     <Binding Path="HasUpdate">
@@ -1119,15 +1120,15 @@
                                        Text="{Binding ErrorMessage, StringFormat='!! {0}'}"
                                        ToolTip="{Binding ErrorMessage}" />
                             <Button Style="{StaticResource CaptionCloseButton}" Width="26" Height="20" Margin="10,0,0,0" FontSize="10"
-                                    Content="✕" ToolTip="{loc:Tr Tip_Dismiss}" Command="{Binding DismissErrorCommand}" />
+                                    Content="✕" AutomationProperties.Name="{loc:Tr Tip_Dismiss}" ToolTip="{loc:Tr Tip_Dismiss}" Command="{Binding DismissErrorCommand}" />
                         </StackPanel>
                     </StackPanel>
 
                     <!-- Başlıkla aynı dikey eksende (simetri) -->
                     <StackPanel Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Orientation="Horizontal">
-                        <Button Style="{StaticResource CaptionButton}" Content="⚙" ToolTip="{loc:Tr Tip_Settings}" Command="{Binding OpenSettingsCommand}" />
-                        <Button Style="{StaticResource CaptionButton}" Content="─" ToolTip="{loc:Tr Tip_Minimize}" Click="Minimize_Click" />
-                        <Button Style="{StaticResource CaptionCloseButton}" Content="✕" ToolTip="{loc:Tr Tip_Close}" Click="Close_Click" />
+                        <Button Style="{StaticResource CaptionButton}" Content="⚙" AutomationProperties.Name="{loc:Tr Tip_Settings}" ToolTip="{loc:Tr Tip_Settings}" Command="{Binding OpenSettingsCommand}" />
+                        <Button Style="{StaticResource CaptionButton}" Content="─" AutomationProperties.Name="{loc:Tr Tip_Minimize}" ToolTip="{loc:Tr Tip_Minimize}" Click="Minimize_Click" />
+                        <Button Style="{StaticResource CaptionCloseButton}" Content="✕" AutomationProperties.Name="{loc:Tr Tip_Close}" ToolTip="{loc:Tr Tip_Close}" Click="Close_Click" />
                     </StackPanel>
                 </Grid>
 
@@ -1506,10 +1507,10 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <Button Style="{StaticResource SmallButton}" Content="◀" ToolTip="{loc:Tr Tip_PrevMonth}" Command="{Binding PreviousMonthCommand}" />
+                                        <Button Style="{StaticResource SmallButton}" Content="◀" AutomationProperties.Name="{loc:Tr Tip_PrevMonth}" ToolTip="{loc:Tr Tip_PrevMonth}" Command="{Binding PreviousMonthCommand}" />
                                         <TextBlock Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16" FontWeight="Bold"
                                                    Foreground="{DynamicResource YellowBrush}" Text="{Binding CalendarTitle}" />
-                                        <Button Grid.Column="2" Margin="0" Style="{StaticResource SmallButton}" Content="▶" ToolTip="{loc:Tr Tip_NextMonth}" Command="{Binding NextMonthCommand}" />
+                                        <Button Grid.Column="2" Margin="0" Style="{StaticResource SmallButton}" Content="▶" AutomationProperties.Name="{loc:Tr Tip_NextMonth}" ToolTip="{loc:Tr Tip_NextMonth}" Command="{Binding NextMonthCommand}" />
                                     </Grid>
 
                                     <ItemsControl Grid.Row="1" Margin="0,8,0,4" Focusable="False" ItemsSource="{Binding WeekdayHeaders}">
@@ -1534,7 +1535,7 @@
                                         </ItemsControl.ItemsPanel>
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate DataType="{x:Type models:CalendarCell}">
-                                                <Button Margin="2" Cursor="Hand" FocusVisualStyle="{x:Null}"
+                                                <Button Margin="2" Cursor="Hand" FocusVisualStyle="{x:Null}" AutomationProperties.Name="{Binding Date}"
                                                         Command="{Binding DataContext.SelectCalendarDayCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                         CommandParameter="{Binding}">
                                                     <Button.Template>
@@ -1947,7 +1948,7 @@
                                             <Button Grid.Column="1" Style="{StaticResource SmallButton}" Content="{loc:Tr Template_Apply}"
                                                     Command="{Binding DataContext.ApplyTemplateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                     CommandParameter="{Binding}" />
-                                            <Button Grid.Column="2" Style="{StaticResource DeleteIconButton}" Content="✕" ToolTip="{loc:Tr Tip_Delete}"
+                                            <Button Grid.Column="2" Style="{StaticResource DeleteIconButton}" Content="✕" AutomationProperties.Name="{loc:Tr Tip_Delete}" ToolTip="{loc:Tr Tip_Delete}"
                                                     Command="{Binding DataContext.DeleteTemplateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                     CommandParameter="{Binding}" />
                                         </Grid>

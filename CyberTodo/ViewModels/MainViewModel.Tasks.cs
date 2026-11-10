@@ -91,11 +91,11 @@ public sealed partial class MainViewModel
             HasDueTime = parsed.DueTime is not null,
             Recurrence = parsed.Recurrence ?? Recurrence.None,
             RepeatDays = parsed.RepeatDays,
-            CreatedAt = DateTime.Now,
+            CreatedAt = Now,
             SortOrder = NextSortOrder(),
         };
 
-        UpdateDerivedState(task, DateTime.Now);
+        UpdateDerivedState(task, Now);
         ActiveTasks.Add(task);
         NewTaskTitle = string.Empty; // kategori kutusu bilinçli korunur: aynı kategoriye art arda ekleme kolay olsun
         OnTasksChanged();
@@ -107,9 +107,9 @@ public sealed partial class MainViewModel
                 return;
             }
 
-            if (FocusTask == task)
+            if (Focus.Task == task)
             {
-                StopFocusCore(DateTime.Now); // harcanan süre günlüğe işlenir, kaybolmaz
+                StopFocusCore(Now); // harcanan süre günlüğe işlenir, kaybolmaz
             }
 
             ActiveTasks.Remove(task);
@@ -129,7 +129,7 @@ public sealed partial class MainViewModel
         }
 
         double sortOrder = task.SortOrder;
-        CompleteCore(task, DateTime.Now);
+        CompleteCore(task, Now);
         PushUndo(_loc.Format("Undo_Complete", task.Code), async () =>
         {
             if (!task.IsCompleted || !CompletedTasks.Contains(task))
@@ -148,7 +148,7 @@ public sealed partial class MainViewModel
     private void CompleteCore(CyberTask task, DateTime now)
     {
         // Bu görevde odak çalışıyorsa önce geçen süre işlenir.
-        if (FocusTask == task)
+        if (Focus.Task == task)
         {
             StopFocusCore(now);
         }
@@ -206,7 +206,7 @@ public sealed partial class MainViewModel
                 return;
             }
 
-            CompleteCore(task, DateTime.Now);
+            CompleteCore(task, Now);
             await SaveAsync();
         });
 
@@ -234,9 +234,9 @@ public sealed partial class MainViewModel
             var spawned = ActiveTasks.FirstOrDefault(t => t.Id == spawnedId);
             if (spawned is not null)
             {
-                if (FocusTask == spawned)
+                if (Focus.Task == spawned)
                 {
-                    StopFocusCore(DateTime.Now);
+                    StopFocusCore(Now);
                 }
 
                 ActiveTasks.Remove(spawned);
@@ -278,9 +278,9 @@ public sealed partial class MainViewModel
             Editor = null;
         }
 
-        if (FocusTask == task)
+        if (Focus.Task == task)
         {
-            StopFocusCore(DateTime.Now); // harcanan süre kaybolmasın
+            StopFocusCore(Now); // harcanan süre kaybolmasın
         }
 
         list.RemoveAt(index);
@@ -316,7 +316,7 @@ public sealed partial class MainViewModel
         }
 
         IsSettingsOpen = false;
-        Editor = new TaskEditorViewModel(task);
+        Editor = new TaskEditorViewModel(task, _time);
     }
 
     [RelayCommand]
@@ -334,7 +334,7 @@ public sealed partial class MainViewModel
         }
 
         var task = editor.Target;
-        UpdateDerivedState(task, DateTime.Now);
+        UpdateDerivedState(task, Now);
         Editor = null;
 
         OnTasksChanged(); // sıralama anahtarı / akıllı liste üyeliği değişmiş olabilir
@@ -351,7 +351,7 @@ public sealed partial class MainViewModel
             }
 
             before.ApplyTo(task);
-            UpdateDerivedState(task, DateTime.Now);
+            UpdateDerivedState(task, Now);
             OnTasksChanged();
             await SaveAsync();
         });
@@ -508,7 +508,7 @@ public sealed partial class MainViewModel
 
         if (parsed.DueDate is { } date)
         {
-            parts.Add("⏱ " + FormatDue(date, parsed.DueTime, DateTime.Now));
+            parts.Add("⏱ " + FormatDue(date, parsed.DueTime, Now));
         }
 
         if (parsed.Recurrence is { } recurrence)

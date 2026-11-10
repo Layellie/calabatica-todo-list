@@ -1120,7 +1120,7 @@
                     <!-- Odak (Pomodoro) göstergesi: başlığın ortasında, sadece çalışırken -->
                     <Grid Grid.Column="1" VerticalAlignment="Center" Margin="20,0">
                         <Grid.Visibility>
-                            <Binding Path="IsFocusRunning">
+                            <Binding Path="Focus.IsRunning">
                                 <Binding.Converter>
                                     <BooleanToVisibilityConverter />
                                 </Binding.Converter>
@@ -1139,21 +1139,21 @@
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
                             <TextBlock VerticalAlignment="Center" FontSize="14" Foreground="{DynamicResource YellowBrush}" MaxWidth="360" TextTrimming="CharacterEllipsis">
-                                <Run Text="◉ " /><Run Text="{loc:Tr Focus_Label}" /><Run Text=" · " /><Run Text="{Binding FocusTask.Code, Mode=OneWay}" /><Run Text=" " /><Run Text="{Binding FocusTask.Title, Mode=OneWay}" />
+                                <Run Text="◉ " /><Run Text="{loc:Tr Focus_Label}" /><Run Text=" · " /><Run Text="{Binding Focus.Task.Code, Mode=OneWay}" /><Run Text=" " /><Run Text="{Binding Focus.Task.Title, Mode=OneWay}" />
                             </TextBlock>
                             <TextBlock Grid.Column="1" Margin="14,0,10,0" VerticalAlignment="Center" FontSize="20" FontWeight="Bold"
-                                       Foreground="{DynamicResource YellowBrush}" Text="{Binding FocusRemainingText}" />
+                                       Foreground="{DynamicResource YellowBrush}" Text="{Binding Focus.RemainingText}" />
                             <Button Grid.Column="2" Style="{StaticResource IconButton}" Content="■" Foreground="{DynamicResource YellowBrush}"
                                     AutomationProperties.Name="{loc:Tr Tip_StopFocus}" ToolTip="{loc:Tr Tip_StopFocus}" Command="{Binding StopFocusCommand}" />
                             <ProgressBar Grid.Row="1" Grid.ColumnSpan="3" Height="5" Margin="0,5,0,0" Style="{StaticResource NeonProgress}"
-                                         Foreground="{DynamicResource YellowBrush}" Maximum="1" Value="{Binding FocusProgress, Mode=OneWay}" />
+                                         Foreground="{DynamicResource YellowBrush}" Maximum="1" Value="{Binding Focus.Progress, Mode=OneWay}" />
                         </Grid>
                     </Grid>
 
                     <!-- Mola göstergesi: odak bitince (cyan; odakla aynı yerde, ikisi aynı anda görünmez) -->
                     <Grid Grid.Column="1" VerticalAlignment="Center" Margin="20,0">
                         <Grid.Visibility>
-                            <Binding Path="IsOnBreak">
+                            <Binding Path="Focus.IsOnBreak">
                                 <Binding.Converter>
                                     <BooleanToVisibilityConverter />
                                 </Binding.Converter>
@@ -1176,7 +1176,7 @@
                                     <Style TargetType="TextBlock">
                                         <Setter Property="Text" Value="{loc:Tr Break_Label}" />
                                         <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsLongBreak}" Value="True">
+                                            <DataTrigger Binding="{Binding Focus.IsLongBreak}" Value="True">
                                                 <Setter Property="Text" Value="{loc:Tr Break_Long}" />
                                             </DataTrigger>
                                         </Style.Triggers>
@@ -1184,11 +1184,11 @@
                                 </TextBlock.Style>
                             </TextBlock>
                             <TextBlock Grid.Column="1" Margin="14,0,10,0" VerticalAlignment="Center" FontSize="20" FontWeight="Bold"
-                                       Foreground="{DynamicResource CyanBrush}" Text="{Binding BreakRemainingText}" />
+                                       Foreground="{DynamicResource CyanBrush}" Text="{Binding Focus.BreakRemainingText}" />
                             <Button Grid.Column="2" Style="{StaticResource IconButton}" Content="⏭" Foreground="{DynamicResource CyanBrush}"
                                     AutomationProperties.Name="{loc:Tr Tip_SkipBreak}" ToolTip="{loc:Tr Tip_SkipBreak}" Command="{Binding SkipBreakCommand}" />
                             <ProgressBar Grid.Row="1" Grid.ColumnSpan="3" Height="5" Margin="0,5,0,0" Style="{StaticResource NeonProgress}"
-                                         Foreground="{DynamicResource CyanBrush}" Maximum="1" Value="{Binding BreakProgress, Mode=OneWay}" />
+                                         Foreground="{DynamicResource CyanBrush}" Maximum="1" Value="{Binding Focus.BreakProgress, Mode=OneWay}" />
                         </Grid>
                     </Grid>
 

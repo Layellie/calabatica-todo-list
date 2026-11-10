@@ -20,11 +20,12 @@ public sealed partial class MainViewModel
 
     private DateOnly _viewsDay;
 
-    private void OnClockTick(object? sender, EventArgs e) => Tick(DateTime.Now);
+    private void OnClockTick(object? sender, EventArgs e) => Tick();
 
-    /// <summary>Saniyelik saat işi. Testler zamanı ileri sarmak için doğrudan çağırır.</summary>
-    internal void Tick(DateTime now)
+    /// <summary>Saniyelik saat işi (enjekte edilen saate göre). Testler sahte saati ilerletip doğrudan çağırır.</summary>
+    internal void Tick()
     {
+        var now = Now;
         for (int i = Toasts.Count - 1; i >= 0; i--)
         {
             if (Toasts[i].ExpiresAt is { } expires && now >= expires)
@@ -33,38 +34,9 @@ public sealed partial class MainViewModel
             }
         }
 
-        if (FocusTask is { } focused)
+        if (Focus.Tick(now, _settings.BreaksEnabled) is { } focusEvent)
         {
-            if (now - _focusStartedAt >= _focusDuration)
-            {
-                int minutes = (int)Math.Round(_focusDuration.TotalMinutes);
-                StopFocusCore(now);
-                _completedFocusCount++;
-                string message = _loc.Format("Toast_FocusDone", $"{focused.Code} {focused.Title}", FormatMinutes(minutes));
-                ShowToast(message, ToastKind.Reminder);
-                AttentionRequested?.Invoke(this, message);
-                _ = SaveAsync();
-
-                if (_settings.BreaksEnabled)
-                {
-                    StartBreak(focused, now);
-                }
-            }
-            else
-            {
-                UpdateFocusDisplay(now);
-            }
-        }
-        else if (IsOnBreak)
-        {
-            if (now >= _breakEndsAt)
-            {
-                EndBreak(now, notify: true);
-            }
-            else
-            {
-                UpdateBreakDisplay(now);
-            }
+            HandleFocusEvent(focusEvent, now);
         }
 
         CheckReminders(now);
@@ -189,7 +161,7 @@ public sealed partial class MainViewModel
             return;
         }
 
-        var until = DateTime.Now.AddMinutes(minutes);
+        var until = Now.AddMinutes(minutes);
         task.SnoozedUntil = until;
         ShowToast(_loc.Format("Toast_Snoozed", task.Code, until.ToString("HH:mm", CultureInfo.InvariantCulture)), ToastKind.Info, lifetime: s_infoLifetime);
         await SaveAsync();

@@ -87,7 +87,7 @@ public sealed partial class MainViewModel
             return;
         }
 
-        var now = DateTime.Now;
+        var now = Now;
         var today = Today;
         var added = new List<CyberTask>(template.Items.Count);
         foreach (var item in template.Items)
@@ -127,9 +127,9 @@ public sealed partial class MainViewModel
         {
             foreach (var task in added)
             {
-                if (FocusTask == task)
+                if (Focus.Task == task)
                 {
-                    StopFocusCore(DateTime.Now);
+                    StopFocusCore(Now);
                 }
 
                 ActiveTasks.Remove(task); // tamamlanmış/silinmiş olanlar zaten listede yok

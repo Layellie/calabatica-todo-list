@@ -50,7 +50,7 @@ public sealed partial class MainViewModel
         _settings.BreaksEnabled = value.Value;
         if (!value.Value)
         {
-            CancelBreak();
+            Focus.CancelBreak();
         }
 
         SaveSettingsIfReady();
@@ -250,7 +250,7 @@ public sealed partial class MainViewModel
             return;
         }
 
-        var now = DateTime.Now;
+        var now = Now;
         foreach (var task in ActiveTasks.Concat(CompletedTasks))
         {
             RefreshDueInfo(task, now);

@@ -60,7 +60,7 @@ public sealed partial class MainViewModel
             Kind = kind,
             ActionLabel = actionLabel,
             Action = action,
-            ExpiresAt = lifetime is { } span ? DateTime.Now + span : null,
+            ExpiresAt = lifetime is { } span ? Now + span : null,
         };
         Toasts.Add(toast);
 

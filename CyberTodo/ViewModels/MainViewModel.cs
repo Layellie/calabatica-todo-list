@@ -18,6 +18,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly StorageService _storage;
     private readonly UpdateService _updates;
     private readonly IStartupRegistration _startup;
+    private readonly TimeProvider _time;
     private readonly BackupService _backups;
     private readonly IFileDialogs _dialogs;
     private readonly UpdateInstaller? _installer;
@@ -30,13 +31,16 @@ public sealed partial class MainViewModel : ObservableObject
     /// <param name="startup">null → bellekte (kayıt defterine dokunmaz); testler için.</param>
     /// <param name="dialogs">null → hiçbir dosya seçilmez/onaylanmaz; testler sahte verir.</param>
     /// <param name="installer">null → kendini güncelleme kapalı (yalnızca yayın sayfası açılır).</param>
+    /// <param name="time">null → sistem saati; testler elle ilerletilen saat verir.</param>
     public MainViewModel(
         StorageService storage,
         UpdateService? updates = null,
         IStartupRegistration? startup = null,
         IFileDialogs? dialogs = null,
-        UpdateInstaller? installer = null)
+        UpdateInstaller? installer = null,
+        TimeProvider? time = null)
     {
+        _time = time ?? TimeProvider.System;
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
         _updates = updates ?? new UpdateService(null, UpdateService.ReadCurrentVersion());
         _startup = startup ?? new InMemoryStartupRegistration();
@@ -51,7 +55,7 @@ public sealed partial class MainViewModel : ObservableObject
         _selectedStartupOption = OptionSets.OnOff[1];
         _selectedBreaksOption = OptionSets.OnOff[0];
         _selectedAutoNextOption = OptionSets.OnOff[1];
-        _calendarMonth = new DateOnly(DateTime.Today.Year, DateTime.Today.Month, 1);
+        _calendarMonth = new DateOnly(Now.Date.Year, Now.Date.Month, 1);
 
         WeekdayHeaders = [];
         RefreshWeekdayHeaders();
@@ -114,7 +118,10 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private string? _errorMessage;
 
-    private static DateOnly Today => DateOnly.FromDateTime(DateTime.Today);
+    /// <summary>Yerel "şimdi" — tek kaynak: testler sahte saat verir, gece yarısı / mola / erteleme deterministik test edilir.</summary>
+    private DateTime Now => _time.GetLocalNow().DateTime;
+
+    private DateOnly Today => DateOnly.FromDateTime(Now);
 
     // ═════════════════════════════ Yaşam döngüsü ═════════════════════════════
 
@@ -150,7 +157,7 @@ public sealed partial class MainViewModel : ObservableObject
         _settings = data.Settings;
         ApplySettingsToUi();
 
-        var now = DateTime.Now;
+        var now = Now;
         ApplyData(data, now);
 
         _initialized = true;
@@ -237,7 +244,7 @@ public sealed partial class MainViewModel : ObservableObject
     public async Task ShutdownAsync()
     {
         _clock.Stop();
-        if (StopFocusCore(DateTime.Now))
+        if (StopFocusCore(Now))
         {
             await SaveAsync();
         }

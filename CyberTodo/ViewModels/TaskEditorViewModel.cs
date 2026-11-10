@@ -159,9 +159,10 @@ public sealed partial class TaskEditorViewModel : ObservableObject
     private const int MaxCategoryLength = 40;
     private const int MaxNotesLength = 4000;
 
-    public TaskEditorViewModel(CyberTask target)
+    public TaskEditorViewModel(CyberTask target, TimeProvider? time = null)
     {
         Target = target ?? throw new ArgumentNullException(nameof(target));
+        _time = time ?? TimeProvider.System;
 
         _title = target.Title;
         _notes = target.Notes ?? string.Empty;
@@ -272,16 +273,20 @@ public sealed partial class TaskEditorViewModel : ObservableObject
     [ObservableProperty]
     private string? _validationError;
 
+    private readonly TimeProvider _time;
+
+    private DateOnly Today => DateOnly.FromDateTime(_time.GetLocalNow().DateTime);
+
     public string Heading => $"{Localizer.Instance["Edit_Title"]} {Target.Code}";
 
     [RelayCommand]
-    private void SetDueToday() => DueDateText = InputParsing.FormatDate(DateOnly.FromDateTime(DateTime.Today));
+    private void SetDueToday() => DueDateText = InputParsing.FormatDate(Today);
 
     [RelayCommand]
-    private void SetDueTomorrow() => DueDateText = InputParsing.FormatDate(DateOnly.FromDateTime(DateTime.Today).AddDays(1));
+    private void SetDueTomorrow() => DueDateText = InputParsing.FormatDate(Today.AddDays(1));
 
     [RelayCommand]
-    private void SetDueNextWeek() => DueDateText = InputParsing.FormatDate(DateOnly.FromDateTime(DateTime.Today).AddDays(7));
+    private void SetDueNextWeek() => DueDateText = InputParsing.FormatDate(Today.AddDays(7));
 
     [RelayCommand]
     private void ClearDue()
@@ -372,7 +377,7 @@ public sealed partial class TaskEditorViewModel : ObservableObject
         // Tekrarlayan görevde tarih boşsa: ilk uygun gün (bugün dahil). Seçili günlerde bugün uygun değilse sıradaki gün.
         if (recurrence != Recurrence.None && dueDate is null)
         {
-            var today = DateOnly.FromDateTime(DateTime.Today);
+            var today = Today;
             dueDate = recurrence == Recurrence.SelectedDays ? RecurrenceRules.FirstMatchOnOrAfter(today, repeatDays) : today;
         }
 

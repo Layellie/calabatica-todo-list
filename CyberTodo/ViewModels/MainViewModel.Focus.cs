@@ -1,41 +1,18 @@
-using System.Collections;
-using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.Globalization;
-using System.IO;
-using System.Windows.Data;
-using System.Windows.Threading;
-using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CyberTodo.Models;
-using CyberTodo.Services;
 
 namespace CyberTodo.ViewModels;
 
+/// <summary>Odak (Pomodoro) + mola: durum makinesi <see cref="FocusTimer"/>'da; burada kredi, bildirim ve kayıt.</summary>
 public sealed partial class MainViewModel
 {
     private const int MaxFocusSessions = 20_000; // ~yıllarca günde birkaç oturum; dosya şişmesin
 
     private readonly List<FocusSession> _focusSessions = [];
 
-    private DateTime _focusStartedAt;
-
-    private TimeSpan _focusDuration;
-
-    // ───────── Odak (Pomodoro) ─────────
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsFocusRunning))]
-    private CyberTask? _focusTask;
-
-    [ObservableProperty]
-    private string _focusRemainingText = string.Empty;
-
-    /// <summary>0..1 geçen süre oranı (başlıktaki ince çubuk).</summary>
-    [ObservableProperty]
-    private double _focusProgress;
-
-    public bool IsFocusRunning => FocusTask is not null;
+    /// <summary>Odak ve mola durumu (XAML: <c>Focus.IsRunning</c>, <c>Focus.RemainingText</c>…).</summary>
+    public FocusTimer Focus { get; } = new();
 
     /// <summary>Görevde odak başlatır; aynı görevde çalışıyorsa durdurur. Başka görevde çalışan oturum önce kaydedilir.</summary>
     [RelayCommand]
@@ -46,25 +23,13 @@ public sealed partial class MainViewModel
             return;
         }
 
-        var now = DateTime.Now;
-        bool credited = false;
-        if (FocusTask is not null)
+        var now = Now;
+        bool sameTask = Focus.Task == task;
+        bool credited = StopFocusCore(now);
+        if (!sameTask)
         {
-            bool sameTask = FocusTask == task;
-            credited = StopFocusCore(now);
-            if (sameTask)
-            {
-                if (credited)
-                {
-                    await SaveAsync();
-                }
-
-                return;
-            }
+            Focus.Start(task, now, TimeSpan.FromMinutes(_settings.FocusMinutes)); // molayı da iptal eder
         }
-
-        CancelBreak(); // molada elle odak başlatıldı
-        BeginFocus(task, now);
 
         if (credited)
         {
@@ -75,42 +40,66 @@ public sealed partial class MainViewModel
     [RelayCommand]
     private async Task StopFocusAsync()
     {
-        if (StopFocusCore(DateTime.Now))
+        if (StopFocusCore(Now))
         {
             await SaveAsync();
         }
     }
 
-    /// <summary>Test için: odak oturumunu verilen anda bitirir (gerçek dakikalarca beklemeden).</summary>
-    internal bool StopFocusAt(DateTime now) => StopFocusCore(now);
+    /// <summary>Molayı atla: hemen biter (otomatik devam ayarı açıksa odak başlar).</summary>
+    [RelayCommand]
+    private void SkipBreak()
+    {
+        if (Focus.IsOnBreak)
+        {
+            ResumeAfterBreak(Focus.SkipBreak(), Now, notify: false);
+        }
+    }
 
     /// <summary>Oturumu kapatır; en az 1 dakika geçtiyse süreyi göreve ve güne işler. İşlendiyse true.</summary>
     private bool StopFocusCore(DateTime now)
     {
-        if (FocusTask is not { } task)
+        if (Focus.Stop(now) is not { Minutes: >= 1 } stop)
         {
             return false;
         }
 
-        var elapsed = now - _focusStartedAt;
-        if (elapsed > _focusDuration)
-        {
-            elapsed = _focusDuration;
-        }
-
-        task.IsFocused = false;
-        FocusTask = null;
-        FocusRemainingText = string.Empty;
-        FocusProgress = 0;
-
-        int minutes = (int)Math.Floor(elapsed.TotalMinutes);
-        if (minutes < 1)
-        {
-            return false;
-        }
-
-        CreditFocus(task, minutes, now);
+        CreditFocus(stop.Task, stop.Minutes, now);
         return true;
+    }
+
+    /// <summary>Saatin odak/mola olaylarını işler (saniyelik tick'ten).</summary>
+    private void HandleFocusEvent(FocusEvent focusEvent, DateTime now)
+    {
+        var task = focusEvent.Task;
+        if (focusEvent.Kind == FocusEventKind.BreakEnded)
+        {
+            ResumeAfterBreak(task, now, notify: true);
+            return;
+        }
+
+        CreditFocus(task, focusEvent.Minutes, now);
+        string message = _loc.Format("Toast_FocusDone", $"{task.Code} {task.Title}", FormatMinutes(focusEvent.Minutes));
+        ShowToast(message, ToastKind.Reminder);
+        AttentionRequested?.Invoke(this, message);
+        _ = SaveAsync();
+    }
+
+    /// <summary>Mola bitti: ayar açıksa ve görev hâlâ aktifse aynı görevde odak başlar.</summary>
+    private void ResumeAfterBreak(CyberTask? task, DateTime now, bool notify)
+    {
+        bool resume = _settings.AutoStartNextFocus && task is { IsCompleted: false } && ActiveTasks.Contains(task) && !Focus.IsRunning;
+        if (notify)
+        {
+            string message = resume ? _loc.Format("Toast_BreakOverResume", $"{task!.Code} {task.Title}") : _loc["Toast_BreakOver"];
+            ShowToast(message, ToastKind.Reminder, lifetime: resume ? s_infoLifetime : null);
+            AttentionRequested?.Invoke(this, message);
+        }
+
+        if (resume)
+        {
+            Focus.Start(task!, now, TimeSpan.FromMinutes(_settings.FocusMinutes));
+        }
     }
 
     private void CreditFocus(CyberTask task, int minutes, DateTime now)
@@ -144,122 +133,5 @@ public sealed partial class MainViewModel
         });
 
         RebuildChart();
-    }
-
-    private void BeginFocus(CyberTask task, DateTime now)
-    {
-        _focusStartedAt = now;
-        _focusDuration = TimeSpan.FromMinutes(_settings.FocusMinutes);
-        task.IsFocused = true;
-        FocusTask = task;
-        UpdateFocusDisplay(now);
-    }
-
-    // ───────── Mola ─────────
-
-    public const int ShortBreakMinutes = 5;
-
-    public const int LongBreakMinutes = 15;
-
-    public const int FocusesPerLongBreak = 4;
-
-    private DateTime _breakStartedAt;
-
-    private DateTime _breakEndsAt;
-
-    private CyberTask? _breakTask;
-
-    private int _completedFocusCount;
-
-    [ObservableProperty]
-    private bool _isOnBreak;
-
-    [ObservableProperty]
-    private bool _isLongBreak;
-
-    [ObservableProperty]
-    private string _breakRemainingText = string.Empty;
-
-    [ObservableProperty]
-    private double _breakProgress;
-
-    /// <summary>Odak bitti: kısa mola; her <see cref="FocusesPerLongBreak"/>. odaktan sonra uzun mola.</summary>
-    private void StartBreak(CyberTask task, DateTime now)
-    {
-        IsLongBreak = _completedFocusCount > 0 && _completedFocusCount % FocusesPerLongBreak == 0;
-        _breakTask = task;
-        _breakStartedAt = now;
-        _breakEndsAt = now.AddMinutes(IsLongBreak ? LongBreakMinutes : ShortBreakMinutes);
-        IsOnBreak = true;
-        UpdateBreakDisplay(now);
-    }
-
-    /// <summary>Mola bitti (süre doldu ya da atlandı). Ayar açıksa ve görev hâlâ aktifse aynı görevde odak başlar.</summary>
-    private void EndBreak(DateTime now, bool notify)
-    {
-        var task = _breakTask;
-        CancelBreak();
-
-        bool resume = _settings.AutoStartNextFocus && task is not null && !task.IsCompleted && ActiveTasks.Contains(task) && FocusTask is null;
-        if (notify)
-        {
-            string message = resume ? _loc.Format("Toast_BreakOverResume", $"{task!.Code} {task.Title}") : _loc["Toast_BreakOver"];
-            ShowToast(message, ToastKind.Reminder, lifetime: resume ? s_infoLifetime : null);
-            AttentionRequested?.Invoke(this, message);
-        }
-
-        if (resume)
-        {
-            BeginFocus(task!, now);
-        }
-    }
-
-    private void CancelBreak()
-    {
-        if (!IsOnBreak)
-        {
-            return;
-        }
-
-        IsOnBreak = false;
-        IsLongBreak = false;
-        _breakTask = null;
-        BreakRemainingText = string.Empty;
-        BreakProgress = 0;
-    }
-
-    /// <summary>Molayı atla: hemen biter (otomatik devam ayarı açıksa odak başlar).</summary>
-    [RelayCommand]
-    private void SkipBreak()
-    {
-        if (IsOnBreak)
-        {
-            EndBreak(DateTime.Now, notify: false);
-        }
-    }
-
-    private void UpdateBreakDisplay(DateTime now)
-    {
-        var total = _breakEndsAt - _breakStartedAt;
-        var remaining = _breakEndsAt - now;
-        if (remaining < TimeSpan.Zero)
-        {
-            remaining = TimeSpan.Zero;
-        }
-
-        BreakRemainingText = $"{(int)remaining.TotalMinutes:00}:{remaining.Seconds:00}";
-        BreakProgress = total.TotalSeconds <= 0 ? 1 : Math.Clamp(1 - remaining.TotalSeconds / total.TotalSeconds, 0, 1);
-    }
-
-    private void UpdateFocusDisplay(DateTime now)
-    {
-        var remaining = _focusDuration - (now - _focusStartedAt);
-        if (remaining < TimeSpan.Zero)
-        {
-            remaining = TimeSpan.Zero;
-        }
-
-        FocusRemainingText = $"{(int)remaining.TotalMinutes:00}:{remaining.Seconds:00}";
-        FocusProgress = _focusDuration.TotalSeconds <= 0 ? 1 : Math.Clamp(1 - remaining.TotalSeconds / _focusDuration.TotalSeconds, 0, 1);
     }
 }

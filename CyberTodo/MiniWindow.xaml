@@ -141,7 +141,7 @@
             <!-- Odak -->
             <StackPanel>
                 <StackPanel.Visibility>
-                    <Binding Path="IsFocusRunning">
+                    <Binding Path="Focus.IsRunning">
                         <Binding.Converter>
                             <BooleanToVisibilityConverter />
                         </Binding.Converter>
@@ -154,21 +154,21 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <TextBlock VerticalAlignment="Center" Foreground="{DynamicResource YellowBrush}" TextTrimming="CharacterEllipsis">
-                        <Run Text="◉ " /><Run Text="{Binding FocusTask.Code, Mode=OneWay}" /><Run Text=" " /><Run Text="{Binding FocusTask.Title, Mode=OneWay}" />
+                        <Run Text="◉ " /><Run Text="{Binding Focus.Task.Code, Mode=OneWay}" /><Run Text=" " /><Run Text="{Binding Focus.Task.Title, Mode=OneWay}" />
                     </TextBlock>
                     <TextBlock Grid.Column="1" Margin="10,0,4,0" VerticalAlignment="Center" FontSize="22" FontWeight="Bold"
-                               Foreground="{DynamicResource YellowBrush}" Text="{Binding FocusRemainingText}" />
+                               Foreground="{DynamicResource YellowBrush}" Text="{Binding Focus.RemainingText}" />
                     <Button Grid.Column="2" Style="{StaticResource MiniIconButton}" Content="■" Foreground="{DynamicResource YellowBrush}"
                             AutomationProperties.Name="{loc:Tr Tip_StopFocus}" ToolTip="{loc:Tr Tip_StopFocus}" Command="{Binding StopFocusCommand}" />
                 </Grid>
                 <ProgressBar Margin="0,6,0,0" Style="{StaticResource MiniProgress}" Foreground="{DynamicResource YellowBrush}"
-                             Value="{Binding FocusProgress, Mode=OneWay}" />
+                             Value="{Binding Focus.Progress, Mode=OneWay}" />
             </StackPanel>
 
             <!-- Mola -->
             <StackPanel>
                 <StackPanel.Visibility>
-                    <Binding Path="IsOnBreak">
+                    <Binding Path="Focus.IsOnBreak">
                         <Binding.Converter>
                             <BooleanToVisibilityConverter />
                         </Binding.Converter>
@@ -185,7 +185,7 @@
                             <Style TargetType="TextBlock">
                                 <Setter Property="Text" Value="{loc:Tr Break_Label}" />
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsLongBreak}" Value="True">
+                                    <DataTrigger Binding="{Binding Focus.IsLongBreak}" Value="True">
                                         <Setter Property="Text" Value="{loc:Tr Break_Long}" />
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -193,12 +193,12 @@
                         </TextBlock.Style>
                     </TextBlock>
                     <TextBlock Grid.Column="1" Margin="10,0,4,0" VerticalAlignment="Center" FontSize="22" FontWeight="Bold"
-                               Foreground="{DynamicResource CyanBrush}" Text="{Binding BreakRemainingText}" />
+                               Foreground="{DynamicResource CyanBrush}" Text="{Binding Focus.BreakRemainingText}" />
                     <Button Grid.Column="2" Style="{StaticResource MiniIconButton}" Content="⏭" Foreground="{DynamicResource CyanBrush}"
                             AutomationProperties.Name="{loc:Tr Tip_SkipBreak}" ToolTip="{loc:Tr Tip_SkipBreak}" Command="{Binding SkipBreakCommand}" />
                 </Grid>
                 <ProgressBar Margin="0,6,0,0" Style="{StaticResource MiniProgress}" Foreground="{DynamicResource CyanBrush}"
-                             Value="{Binding BreakProgress, Mode=OneWay}" />
+                             Value="{Binding Focus.BreakProgress, Mode=OneWay}" />
             </StackPanel>
 
             <!-- Boşta: ipucu -->
@@ -206,10 +206,10 @@
                 <TextBlock.Style>
                     <Style TargetType="TextBlock">
                         <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsFocusRunning}" Value="True">
+                            <DataTrigger Binding="{Binding Focus.IsRunning}" Value="True">
                                 <Setter Property="Visibility" Value="Collapsed" />
                             </DataTrigger>
-                            <DataTrigger Binding="{Binding IsOnBreak}" Value="True">
+                            <DataTrigger Binding="{Binding Focus.IsOnBreak}" Value="True">
                                 <Setter Property="Visibility" Value="Collapsed" />
                             </DataTrigger>
                         </Style.Triggers>

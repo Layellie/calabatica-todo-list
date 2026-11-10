@@ -10,7 +10,9 @@ void Check(bool ok, string name) { Console.WriteLine($"{(ok ? "PASS" : "FAIL")} 
 string dir = Path.Combine(Path.GetTempPath(), "cybertodo-harness-" + Guid.NewGuid().ToString("N"));
 string path = Path.Combine(dir, "cyber_data.json");
 AppLog.Configure(Path.Combine(dir, "logs")); // testler gerçek log klasörüne yazmasın
-async Task<MainViewModel> Fresh() { var v = new MainViewModel(new StorageService(path)); await v.InitializeAsync(); return v; }
+// Paylaşılan sahte saat (öğlen): "bugün 23:59" gibi testler gün içindeki saatten bağımsız.
+var clock = new ManualTime(DateTime.Today.AddHours(12));
+async Task<MainViewModel> Fresh() { var v = new MainViewModel(new StorageService(path), time: clock); await v.InitializeAsync(); return v; }
 
 var thread = new Thread(() =>
 {
@@ -159,16 +161,15 @@ var thread = new Thread(() =>
 
             // ── Focus (Pomodoro): bitmiş oturumu simüle et ──
             await vm.StartFocusCommand.ExecuteAsync(rapor);
-            Check(vm.IsFocusRunning && rapor.IsFocused && vm.FocusRemainingText == "25:00", "focus started 25:00");
-            var startField = typeof(MainViewModel).GetField("_focusStartedAt", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-            startField.SetValue(vm, DateTime.Now.AddMinutes(-26));
+            Check(vm.Focus.IsRunning && rapor.IsFocused && vm.Focus.RemainingText == "25:00", "focus started 25:00");
             int attention = 0; vm.AttentionRequested += (_, _) => attention++;
-            await Task.Delay(1300);
-            Check(!vm.IsFocusRunning && rapor.TrackedMinutes == 25 && attention >= 1, "focus completes, 25 min credited");
+            clock.Advance(TimeSpan.FromMinutes(25));
+            vm.Tick();
+            Check(!vm.Focus.IsRunning && rapor.TrackedMinutes == 25 && attention >= 1, "focus completes, 25 min credited");
             Check(Math.Abs(vm.SelectedDay!.HoursWorked - 25 / 60.0) < 0.01 && vm.SelectedDay.Entries.Any(e => e.Status == LogStatus.Focus), "focus logged to today");
             await vm.StartFocusCommand.ExecuteAsync(rapor);
             await vm.StopFocusCommand.ExecuteAsync(null);
-            Check(!vm.IsFocusRunning && rapor.TrackedMinutes == 25, "stop <1 min credits nothing");
+            Check(!vm.Focus.IsRunning && rapor.TrackedMinutes == 25, "stop <1 min credits nothing");
             vm.Toasts.Clear();
             attention = 0;
 
@@ -382,7 +383,8 @@ var thread = new Thread(() =>
             Check(File.ReadAllText(coalescePath).Contains("\"progress\": 60"), "FlushNow writes synchronously (session ending)");
 
             // ══════════════ Geri alma (Ctrl+Z / ↶) ══════════════
-            var u = new MainViewModel(new StorageService(Path.Combine(dir, "undo.json")));
+            var uClock = new ManualTime(DateTime.Today.AddHours(12));
+            var u = new MainViewModel(new StorageService(Path.Combine(dir, "undo.json")), time: uClock);
             await u.InitializeAsync();
             Check(!u.CanUndo && !u.UndoCommand.CanExecute(null), "undo: nothing to undo on start");
 
@@ -451,7 +453,9 @@ var thread = new Thread(() =>
             await u.AddTaskCommand.ExecuteAsync(null);
             var uf = u.ActiveTasks.First(t => t.Title == "Focus me");
             await u.StartFocusCommand.ExecuteAsync(uf);
-            Check(u.StopFocusAt(DateTime.Now.AddMinutes(10)), "focus: 10 min session credited");
+            uClock.Advance(TimeSpan.FromMinutes(10));
+            await u.StopFocusCommand.ExecuteAsync(null);
+            Check(uf.TrackedMinutes == 10, "focus: 10 min session credited");
             u.ShowFocusCommand.Execute(null);
             Check(u.IsFocusView && u.FocusByCategory.Count == 1 && u.FocusByCategory[0].Label == "#study"
                 && u.FocusByCategory[0].ValueText == Localizer.Instance.Format("Fmt_Minutes", 10) && u.FocusByTask[0].Label == uf.Code + " Focus me",
@@ -663,68 +667,88 @@ var thread = new Thread(() =>
             await notInstalled.CheckUpdatesCommand.ExecuteAsync(null);
             Check(notInstalled.HasUpdate && !notInstalled.CanInstallUpdate, "update: dev build only offers the release page");
 
-            // ══════════════ Hatırlatma erteleme ══════════════
-            var sn = new MainViewModel(new StorageService(Path.Combine(dir, "snooze.json")));
+            // ══════════════ Hatırlatma erteleme (sahte saat) ══════════════
+            var snClock = new ManualTime(DateTime.Today.AddHours(10));
+            var sn = new MainViewModel(new StorageService(Path.Combine(dir, "snooze.json")), time: snClock);
             await sn.InitializeAsync();
             sn.NewTaskTitle = "Call mom";
             await sn.AddTaskCommand.ExecuteAsync(null);
             var st = sn.ActiveTasks.Single();
-            var snDue = DateTime.Now.AddMinutes(30);
-            st.DueAt = snDue;
+            st.DueAt = snClock.LocalNow.AddMinutes(30);
             st.HasDueTime = true;
             st.ReminderMinutesBefore = 0;
-            sn.Tick(snDue.AddSeconds(1));
+            snClock.Advance(TimeSpan.FromMinutes(29));
+            sn.Tick();
+            Check(!sn.Toasts.Any(t => t.Kind == ToastKind.Reminder), "snooze: no reminder before due time");
+            snClock.Advance(TimeSpan.FromMinutes(1));
+            sn.Tick();
             var rt = sn.Toasts.Single(t => t.Kind == ToastKind.Reminder);
             Check(st.ReminderFired && rt.HasAction && rt.HasSecondaryAction, "snooze: reminder toast offers 10 min and 1 h");
             await sn.RunToastSecondaryActionCommand.ExecuteAsync(rt);
-            Check(st.SnoozedUntil is { } snUntil && Math.Abs((snUntil - DateTime.Now.AddMinutes(60)).TotalSeconds) < 5 && !sn.Toasts.Contains(rt),
-                "snooze: 1 h snooze sets time and closes the toast");
-            sn.Tick(DateTime.Now.AddMinutes(30));
+            Check(st.SnoozedUntil == snClock.LocalNow.AddMinutes(60) && !sn.Toasts.Contains(rt), "snooze: 1 h snooze sets exact time and closes the toast");
+            snClock.Advance(TimeSpan.FromMinutes(59));
+            sn.Tick();
             Check(!sn.Toasts.Any(t => t.Kind == ToastKind.Reminder), "snooze: no reminder before snooze time");
-            sn.Tick(DateTime.Now.AddMinutes(61));
+            snClock.Advance(TimeSpan.FromMinutes(1));
+            sn.Tick();
             var rt2 = sn.Toasts.SingleOrDefault(t => t.Kind == ToastKind.Reminder);
-            Check(rt2 is not null && st.SnoozedUntil is null, "snooze: reminder shown again when snooze ends");
+            Check(rt2 is not null && st.SnoozedUntil is null, "snooze: reminder shown again exactly when snooze ends");
             await sn.RunToastActionCommand.ExecuteAsync(rt2);
-            Check(st.SnoozedUntil is { } snUntil2 && Math.Abs((snUntil2 - DateTime.Now.AddMinutes(10)).TotalSeconds) < 5, "snooze: 10 min snooze");
+            Check(st.SnoozedUntil == snClock.LocalNow.AddMinutes(10), "snooze: 10 min snooze");
             await sn.CompleteTaskCommand.ExecuteAsync(st);
-            sn.Tick(DateTime.Now.AddMinutes(11));
+            snClock.Advance(TimeSpan.FromMinutes(11));
+            sn.Tick();
             Check(!sn.Toasts.Any(t => t.Kind == ToastKind.Reminder), "snooze: completed task does not remind again");
             sn.FlushNow();
             Check(File.ReadAllText(Path.Combine(dir, "snooze.json")).Contains("\"snoozedUntil\""), "snooze: snooze time persisted");
 
-            // ══════════════ Mola zamanlayıcısı ══════════════
-            var br = new MainViewModel(new StorageService(Path.Combine(dir, "breaks.json")));
+            // ══════════════ Mola zamanlayıcısı (sahte saat) ══════════════
+            var brClock = new ManualTime(DateTime.Today.AddHours(9));
+            var br = new MainViewModel(new StorageService(Path.Combine(dir, "breaks.json")), time: brClock);
             await br.InitializeAsync();
             br.NewTaskTitle = "Deep work";
             await br.AddTaskCommand.ExecuteAsync(null);
             var bt = br.ActiveTasks.Single();
+            void Run(TimeSpan span) { brClock.Advance(span); br.Tick(); }
             await br.StartFocusCommand.ExecuteAsync(bt);
-            var t1 = DateTime.Now.AddMinutes(25).AddSeconds(5);
-            br.Tick(t1);
-            Check(!br.IsFocusRunning && br.IsOnBreak && !br.IsLongBreak && br.BreakRemainingText == "05:00" && bt.TrackedMinutes == 25,
-                "breaks: 5 min break after focus: " + br.BreakRemainingText);
-            br.Tick(t1.AddMinutes(5).AddSeconds(1));
-            Check(!br.IsOnBreak && !br.IsFocusRunning && br.Toasts.Any(t => t.Message.StartsWith("☕")), "breaks: break ends with notice, no auto-start by default");
+            Run(TimeSpan.FromMinutes(12));
+            Check(br.Focus.IsRunning && br.Focus.RemainingText == "13:00" && Math.Abs(br.Focus.Progress - 12 / 25.0) < 1e-9, "breaks: countdown follows the clock");
+            Run(TimeSpan.FromMinutes(13));
+            Check(!br.Focus.IsRunning && br.Focus.IsOnBreak && !br.Focus.IsLongBreak && br.Focus.BreakRemainingText == "05:00" && bt.TrackedMinutes == 25,
+                "breaks: 5 min break exactly when focus ends: " + br.Focus.BreakRemainingText);
+            Run(TimeSpan.FromMinutes(5));
+            Check(!br.Focus.IsOnBreak && !br.Focus.IsRunning && br.Toasts.Any(t => t.Message.StartsWith("☕")), "breaks: break ends with notice, no auto-start by default");
 
             br.SelectedAutoNextOption = br.SoundOptions.First(o => o.Value);
             await br.StartFocusCommand.ExecuteAsync(bt);
-            var t2 = DateTime.Now.AddMinutes(25).AddSeconds(5);
-            br.Tick(t2);                                     // 2. odak bitti → kısa mola
-            var t3 = t2.AddMinutes(5).AddSeconds(1);
-            br.Tick(t3);                                     // mola bitti → odak otomatik
-            Check(br.IsFocusRunning && br.FocusTask == bt && !br.IsOnBreak, "breaks: auto-start next focus on the same task");
-            var t4 = t3.AddMinutes(25).AddSeconds(5);
-            br.Tick(t4);                                     // 3. odak
-            Check(br.IsOnBreak && !br.IsLongBreak, "breaks: 3rd focus -> short break");
+            Run(TimeSpan.FromMinutes(25));                     // 2. odak → kısa mola
+            Run(TimeSpan.FromMinutes(5));                      // mola bitti → odak otomatik
+            Check(br.Focus.IsRunning && br.Focus.Task == bt && !br.Focus.IsOnBreak, "breaks: auto-start next focus on the same task");
+            Run(TimeSpan.FromMinutes(25));                     // 3. odak
+            Check(br.Focus.IsOnBreak && !br.Focus.IsLongBreak, "breaks: 3rd focus -> short break");
             br.SkipBreakCommand.Execute(null);
-            Check(!br.IsOnBreak && br.IsFocusRunning, "breaks: skip ends break (and auto-starts focus)");
-            br.Tick(DateTime.Now.AddMinutes(25).AddSeconds(5)); // 4. odak
-            Check(br.IsOnBreak && br.IsLongBreak && br.BreakRemainingText == "15:00", "breaks: every 4th focus -> 15 min long break: " + br.BreakRemainingText);
+            Check(!br.Focus.IsOnBreak && br.Focus.IsRunning, "breaks: skip ends break (and auto-starts focus)");
+            Run(TimeSpan.FromMinutes(25));                     // 4. odak
+            Check(br.Focus.IsOnBreak && br.Focus.IsLongBreak && br.Focus.BreakRemainingText == "15:00", "breaks: every 4th focus -> 15 min long break: " + br.Focus.BreakRemainingText);
+            Check(bt.TrackedMinutes == 100, "breaks: four full sessions credited (100 min)");
             await br.StartFocusCommand.ExecuteAsync(bt);
-            Check(!br.IsOnBreak && br.IsFocusRunning, "breaks: starting focus manually cancels the break");
+            Check(!br.Focus.IsOnBreak && br.Focus.IsRunning, "breaks: starting focus manually cancels the break");
             br.SelectedBreaksOption = br.SoundOptions.First(o => !o.Value);
-            br.Tick(DateTime.Now.AddMinutes(25).AddSeconds(5));
-            Check(!br.IsOnBreak && !br.IsFocusRunning, "breaks: disabled -> no break after focus");
+            Run(TimeSpan.FromMinutes(25));
+            Check(!br.Focus.IsOnBreak && !br.Focus.IsRunning, "breaks: disabled -> no break after focus");
+
+            // ── FocusTimer birim testleri (UI'sız) ──
+            var ft = new FocusTimer();
+            var ftTask = new CyberTask { Title = "x" };
+            var ftStart = new DateTime(2026, 1, 1, 9, 0, 0);
+            ft.Start(ftTask, ftStart, TimeSpan.FromMinutes(25));
+            Check(ft.Stop(ftStart.AddSeconds(59))?.Minutes == 0 && !ftTask.IsFocused, "focus timer: <1 min stop credits 0, clears flag");
+            ft.Start(ftTask, ftStart, TimeSpan.FromMinutes(25));
+            Check(ft.Stop(ftStart.AddHours(3))?.Minutes == 25, "focus timer: stop after overrun is capped at session length");
+            Check(ft.Tick(ftStart, breaksEnabled: true) is null && ft.Stop(ftStart) is null, "focus timer: idle tick/stop do nothing");
+            ft.Start(ftTask, ftStart, TimeSpan.FromMinutes(25));
+            var ev = ft.Tick(ftStart.AddMinutes(25), breaksEnabled: false);
+            Check(ev is { Kind: FocusEventKind.FocusCompleted, Minutes: 25 } && !ft.IsOnBreak, "focus timer: completes without break when disabled");
 
             // ══════════════ Alışkanlıklar ══════════════
             var hToday = DateOnly.FromDateTime(DateTime.Today);
@@ -819,9 +843,9 @@ var thread = new Thread(() =>
             Check(kb.Editor?.Target == K("K2"), "keys: Enter opens editor");
             kb.CancelEditCommand.Execute(null);
             await kb.ToggleFocusSelectedAsync();
-            Check(kb.FocusTask == K("K2"), "keys: F starts focus");
+            Check(kb.Focus.Task == K("K2"), "keys: F starts focus");
             await kb.ToggleFocusSelectedAsync();
-            Check(kb.FocusTask is null, "keys: F again stops focus");
+            Check(kb.Focus.Task is null, "keys: F again stops focus");
             var k2 = K("K2");
             kb.EscapeCommand.Execute(null);
             Check(kb.SelectedTask is null && !k2.IsSelected, "keys: Esc clears selection");
@@ -944,4 +968,18 @@ sealed class FakeHttp : System.Net.Http.HttpMessageHandler
         response.RequestMessage = RedirectTo is null ? request : new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, RedirectTo);
         return Task.FromResult(response);
     }
+}
+
+/// <summary>Elle ilerletilen saat (Microsoft.Extensions.TimeProvider.Testing paketi yerine; bağımlılıksız).</summary>
+sealed class ManualTime(DateTime localStart) : TimeProvider
+{
+    private DateTimeOffset _utc = new DateTimeOffset(localStart, TimeZoneInfo.Local.GetUtcOffset(localStart)).ToUniversalTime();
+
+    public DateTime LocalNow => GetLocalNow().DateTime;
+
+    public override DateTimeOffset GetUtcNow() => _utc;
+
+    public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Local;
+
+    public void Advance(TimeSpan span) => _utc += span;
 }

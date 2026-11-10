@@ -82,7 +82,7 @@ public sealed partial class MainViewModel
     {
         try
         {
-            string path = await _backups.CreateSafetyAsync(StorageService.Serialize(CreateSnapshot()), DateTime.Now, "manual");
+            string path = await _backups.CreateSafetyAsync(StorageService.Serialize(CreateSnapshot()), Now, "manual");
             ShowToast(_loc.Format("Toast_BackupSaved", Path.GetFileName(path)), ToastKind.Info, lifetime: s_infoLifetime);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -151,7 +151,7 @@ public sealed partial class MainViewModel
         string safety;
         try
         {
-            safety = await _backups.CreateSafetyAsync(StorageService.Serialize(CreateSnapshot()), DateTime.Now, reason);
+            safety = await _backups.CreateSafetyAsync(StorageService.Serialize(CreateSnapshot()), Now, reason);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -172,20 +172,12 @@ public sealed partial class MainViewModel
     /// <summary>Tüm veriyi değiştirir. Odak oturumu kredilendirilmeden kapanır (eski veriye aitti), geri alma geçmişi silinir.</summary>
     private void ReplaceData(CyberData data)
     {
-        if (FocusTask is { } focused)
-        {
-            focused.IsFocused = false;
-            FocusTask = null;
-            FocusRemainingText = string.Empty;
-            FocusProgress = 0;
-        }
-
-        CancelBreak();
+        Focus.Reset();
         SelectedTask = null;
         Editor = null;
         ClearUndo();
 
-        var now = DateTime.Now;
+        var now = Now;
         ApplyData(data, now);
         _viewsDay = DateOnly.FromDateTime(now);
         OnTasksChanged();
@@ -195,7 +187,7 @@ public sealed partial class MainViewModel
     [RelayCommand]
     private async Task ExportJsonAsync()
     {
-        string? path = _dialogs.PickSavePath($"calabatica-{DateTime.Now:yyyyMMdd}.json", JsonFilter);
+        string? path = _dialogs.PickSavePath($"calabatica-{Now:yyyyMMdd}.json", JsonFilter);
         if (path is not null)
         {
             await ExportAsync(path, StorageService.Serialize(CreateSnapshot()));
@@ -205,7 +197,7 @@ public sealed partial class MainViewModel
     [RelayCommand]
     private async Task ExportCsvAsync()
     {
-        string? path = _dialogs.PickSavePath($"calabatica-{DateTime.Now:yyyyMMdd}.csv", "CSV (*.csv)|*.csv");
+        string? path = _dialogs.PickSavePath($"calabatica-{Now:yyyyMMdd}.csv", "CSV (*.csv)|*.csv");
         if (path is null)
         {
             return;
@@ -225,7 +217,7 @@ public sealed partial class MainViewModel
             return;
         }
 
-        string? path = _dialogs.PickSavePath($"calabatica-{DateTime.Now:yyyyMMdd}.ics", "iCalendar (*.ics)|*.ics");
+        string? path = _dialogs.PickSavePath($"calabatica-{Now:yyyyMMdd}.ics", "iCalendar (*.ics)|*.ics");
         if (path is not null)
         {
             await ExportAsync(path, System.Text.Encoding.UTF8.GetBytes(DataExporter.ToIcs(ActiveTasks, DateTime.UtcNow)));

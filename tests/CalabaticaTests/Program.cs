@@ -876,6 +876,35 @@ var thread = new Thread(() =>
             var miniSaved = await StorageService.ReadFileAsync(Path.Combine(dir, "mini.json"));
             Check(!mn.IsMiniMode && miniSaved.Settings.MiniLeft == 120 && miniSaved.Settings.MiniTop == 341, "mini: toggles back, position persisted");
 
+            // ══════════════ Artımlı görünüm güncellemesi (tam Refresh olmadan doğru filtre/sıra) ══════════════
+            var iv = new MainViewModel(new StorageService(Path.Combine(dir, "incremental.json")), time: new ManualTime(DateTime.Today.AddHours(8)));
+            await iv.InitializeAsync();
+            foreach (string title in new[] { "Alpha @today @18:00", "Beta @today @09:00", "Gamma report @today @12:00" })
+            {
+                iv.NewTaskTitle = title;
+                await iv.AddTaskCommand.ExecuteAsync(null);
+            }
+
+            iv.SelectedSortOption = iv.SortOptions.First(o => o.Value == SortMode.DueDate);
+            string Visible() => string.Join(",", iv.ActiveView.Cast<CyberTask>().Select(t => t.Title));
+            iv.NewTaskTitle = "Delta @today @10:00";
+            await iv.AddTaskCommand.ExecuteAsync(null);
+            Check(Visible() == "Beta,Delta,Gamma report,Alpha", "incremental: added task lands in due-date order: " + Visible());
+            iv.SearchText = "report";
+            iv.NewTaskTitle = "Epsilon @today @07:00";
+            await iv.AddTaskCommand.ExecuteAsync(null);
+            iv.NewTaskTitle = "Second report @today @06:00";
+            await iv.AddTaskCommand.ExecuteAsync(null);
+            Check(Visible() == "Second report,Gamma report", "incremental: search filter applies to newly added tasks: " + Visible());
+            var gamma = iv.ActiveTasks.Single(t => t.Title == "Gamma report");
+            await iv.CompleteTaskCommand.ExecuteAsync(gamma);
+            Check(Visible() == "Second report" && iv.CompletedView.Cast<CyberTask>().First() == gamma, "incremental: completed task leaves active view, tops completed view");
+            await Task.Delay(400);
+            await iv.RestoreTaskCommand.ExecuteAsync(gamma);
+            Check(Visible() == "Second report,Gamma report", "incremental: restored task returns to sorted position: " + Visible());
+            iv.SearchText = string.Empty;
+            Check(iv.SmartViews.First(s => s.Value == SmartView.Today).Count == 4 && iv.SmartViews.First(s => s.Value == SmartView.Overdue).Count == 2, "incremental: smart-view counts still updated (08:00: 4 today, 2 overdue)");
+
             // ══════════════ Log ══════════════
             Check(File.Exists(Path.Combine(dir, "logs", "app.log")) && File.ReadAllText(Path.Combine(dir, "logs", "app.log")).Contains("ERROR [MainViewModel]"),
                 "log: caught errors (e.g. invalid import) are written to app.log");

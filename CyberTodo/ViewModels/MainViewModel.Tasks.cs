@@ -98,7 +98,7 @@ public sealed partial class MainViewModel
         UpdateDerivedState(task, Now);
         ActiveTasks.Add(task);
         NewTaskTitle = string.Empty; // kategori kutusu bilinçli korunur: aynı kategoriye art arda ekleme kolay olsun
-        OnTasksChanged();
+        OnTasksChanged(TaskChange.Membership);
 
         PushUndo(_loc.Format("Undo_Add", task.Code), async () =>
         {
@@ -113,7 +113,7 @@ public sealed partial class MainViewModel
             }
 
             ActiveTasks.Remove(task);
-            OnTasksChanged();
+            OnTasksChanged(TaskChange.Membership);
             await SaveAsync();
         });
 
@@ -185,7 +185,7 @@ public sealed partial class MainViewModel
             ShowToast(_loc.Format("Toast_Recurring", $"{next.Code} {next.DueText}"), ToastKind.Info, lifetime: s_infoLifetime);
         }
 
-        OnTasksChanged();
+        OnTasksChanged(TaskChange.Membership);
         RebuildChart(); // ölçek (max saat) değişmiş olabilir
     }
 
@@ -253,7 +253,7 @@ public sealed partial class MainViewModel
         CompletedTasks.Remove(task);
         ActiveTasks.Add(task);
 
-        OnTasksChanged();
+        OnTasksChanged(TaskChange.Membership);
         RebuildChart();
     }
 
@@ -284,7 +284,7 @@ public sealed partial class MainViewModel
         }
 
         list.RemoveAt(index);
-        OnTasksChanged();
+        OnTasksChanged(TaskChange.Membership);
         await SaveAsync();
 
         var entry = PushUndo(_loc.Format("Undo_Delete", task.Code), async () =>
@@ -295,7 +295,7 @@ public sealed partial class MainViewModel
             }
 
             list.Insert(Math.Min(index, list.Count), task);
-            OnTasksChanged();
+            OnTasksChanged(TaskChange.Membership);
             await SaveAsync();
         });
 

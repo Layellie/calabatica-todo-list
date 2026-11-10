@@ -57,11 +57,36 @@ public sealed partial class MainViewModel
         SaveSettingsIfReady();
     }
 
+    /// <summary>Görev listelerinde ne değişti (görünümün ne kadar yenileneceğini belirler).</summary>
+    private enum TaskChange
+    {
+        /// <summary>
+        /// Yalnızca ekleme/çıkarma (ekle, tamamla, geri aç, sil ve bunların geri alınması). ListCollectionView bu
+        /// olayları tek tek işler: yeni öğeyi filtreden geçirip sıralı yerine koyar. Tam Refresh gereksiz ve pahalı
+        /// (2.500 görevde işlem başına ~70-100 ms'nin büyük kısmı).
+        /// </summary>
+        Membership,
+
+        /// <summary>Var olan görevin sıralama/filtre anahtarları değişmiş olabilir (düzenleme, toplu değişim): tam yenileme.</summary>
+        Content,
+    }
+
     /// <summary>Görev eklendi/silindi/değişti: kategori çipleri, akıllı liste sayaçları ve görünümler güncellenir.</summary>
-    private void OnTasksChanged()
+    private void OnTasksChanged(TaskChange change = TaskChange.Content)
     {
         RefreshCategories();
-        RefreshViews();
+        if (change == TaskChange.Content)
+        {
+            RefreshViews();
+        }
+        else
+        {
+            UpdateSmartViewCounts();
+            if (IsMiniMode)
+            {
+                OnPropertyChanged(nameof(HasMiniTasks));
+            }
+        }
 
         if (!_initialized)
         {

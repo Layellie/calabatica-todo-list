@@ -121,7 +121,7 @@ public sealed partial class MainViewModel
         }
 
         IsTemplatesOpen = false;
-        OnTasksChanged();
+        OnTasksChanged(TaskChange.Membership);
         PushUndo(_loc.Format("Undo_Template", template.Name), async () =>
         {
             foreach (var task in added)
@@ -134,7 +134,7 @@ public sealed partial class MainViewModel
                 ActiveTasks.Remove(task); // tamamlanmış/silinmiş olanlar zaten listede yok
             }
 
-            OnTasksChanged();
+            OnTasksChanged(TaskChange.Membership);
             await SaveAsync();
         });
         ShowToast(_loc.Format("Toast_TemplateApplied", template.Name, template.Items.Count), ToastKind.Info, lifetime: s_infoLifetime);

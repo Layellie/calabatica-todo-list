@@ -968,6 +968,39 @@
             </DataTemplate.Triggers>
         </DataTemplate>
 
+        <!--
+            Sanallaştırılmış görev listesi: yalnızca görünen satırlar oluşturulur, kaydırırken satırlar yeniden kullanılır.
+            (Önceden ScrollViewer içindeki düz ItemsControl 2500 görevde ~18 sn açılış / 570 MB'a çıkıyordu.)
+            ScrollViewer kontrolün KENDİ şablonunda olmalı ki panel kaydırmayı yönetebilsin (CanContentScroll).
+            EdgeMode: kırpma kenarı çizgisi düzeltmesi (bkz. NeonTextBox); içerik yumuşatmalı kalır.
+        -->
+        <ControlTemplate x:Key="VirtualItemsTemplate" TargetType="ItemsControl">
+            <ScrollViewer Focusable="False"
+                          CanContentScroll="True"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto"
+                          Background="{TemplateBinding Background}"
+                          RenderOptions.EdgeMode="Aliased">
+                <ItemsPresenter RenderOptions.EdgeMode="Unspecified" />
+            </ScrollViewer>
+        </ControlTemplate>
+
+        <Style x:Key="VirtualList" TargetType="ItemsControl">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template" Value="{StaticResource VirtualItemsTemplate}" />
+            <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
+            <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+            <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel" />
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel />
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <ItemsPanelTemplate x:Key="SingleRowPanel">
             <UniformGrid Rows="1" />
         </ItemsPanelTemplate>
@@ -1232,12 +1265,10 @@
 
                         <!-- Aktif görevler -->
                         <Grid Grid.Row="3">
-                            <!-- EdgeMode: kırpma kenarı çizgisi düzeltmesi (bkz. NeonTextBox); içerik yumuşatmalı kalır -->
-                            <!-- Boş alana bırakılırsa listenin sonuna taşınır -->
-                            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Focusable="False" RenderOptions.EdgeMode="Aliased"
-                                          Background="Transparent" AllowDrop="True" DragOver="ListEnd_DragOver" Drop="ListEnd_Drop">
-                                <ItemsControl ItemsSource="{Binding ActiveView}" ItemTemplate="{StaticResource ActiveTaskTemplate}" Focusable="False" RenderOptions.EdgeMode="Unspecified" />
-                            </ScrollViewer>
+                            <!-- Sanal liste; satırların altındaki boş alana bırakılırsa listenin sonuna taşınır -->
+                            <ItemsControl x:Name="ActiveList" Style="{StaticResource VirtualList}"
+                                          ItemsSource="{Binding ActiveView}" ItemTemplate="{StaticResource ActiveTaskTemplate}"
+                                          AllowDrop="True" DragOver="ListEnd_DragOver" Drop="ListEnd_Drop" />
                             <TextBlock Margin="46,6,0,0" FontSize="15" Foreground="{StaticResource GreyBrush}" Text="{loc:Tr Empty_Active}">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
@@ -1260,9 +1291,8 @@
                             <Rectangle Height="1" Margin="0,8,0,0" Fill="{StaticResource DividerBrush}" />
                         </StackPanel>
 
-                        <ScrollViewer Grid.Row="5" MaxHeight="170" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Focusable="False" RenderOptions.EdgeMode="Aliased">
-                            <ItemsControl ItemsSource="{Binding CompletedView}" ItemTemplate="{StaticResource CompletedTaskTemplate}" Focusable="False" RenderOptions.EdgeMode="Unspecified" />
-                        </ScrollViewer>
+                        <ItemsControl Grid.Row="5" MaxHeight="170" Style="{StaticResource VirtualList}"
+                                      ItemsSource="{Binding CompletedView}" ItemTemplate="{StaticResource CompletedTaskTemplate}" />
                     </Grid>
 
                     <!-- ───────── SAĞ: LOG + GRAFİK ───────── -->

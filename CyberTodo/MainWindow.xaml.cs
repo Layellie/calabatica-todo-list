@@ -96,8 +96,12 @@ public partial class MainWindow : Window
         Closed += OnClosed;
         StateChanged += OnStateChanged;
 
-        // Oturum kapanırken (çıkış/yeniden başlatma) tepsiye gizleme yapılmasın.
-        Application.Current.SessionEnding += (_, _) => _exitRequested = true;
+        // Oturum kapanırken (çıkış/yeniden başlatma): tepsiye gizleme yapılmasın, ertelenmiş kayıt hemen yazılsın.
+        Application.Current.SessionEnding += (_, _) =>
+        {
+            _exitRequested = true;
+            _viewModel.FlushNow();
+        };
 
         ApplyTheme(_viewModel.CurrentTheme);
 

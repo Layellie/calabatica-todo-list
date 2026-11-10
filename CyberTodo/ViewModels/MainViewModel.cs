@@ -19,8 +19,10 @@ public sealed partial class SmartViewOption : ObservableObject
     {
         Value = value;
         Key = key;
-        Localizer.Instance.PropertyChanged += (_, _) => OnPropertyChanged(nameof(Label));
+        PropertyChangedEventManager.AddHandler(Localizer.Instance, OnLanguageChanged, string.Empty); // zayıf abonelik
     }
+
+    private void OnLanguageChanged(object? sender, PropertyChangedEventArgs e) => OnPropertyChanged(nameof(Label));
 
     public SmartView Value { get; }
 
@@ -60,6 +62,12 @@ public sealed partial class MainViewModel : ObservableObject
     private DateOnly? _calendarSelectedDate;
     private readonly Dictionary<DateOnly, DayActivity> _daysByDate = new();
     private readonly DispatcherTimer _clock;
+
+    /// <summary>Art arda değişiklikleri tek yazıma toplama süresi (kayıp penceresi en fazla bu kadar).</summary>
+    private static readonly TimeSpan SaveDelay = TimeSpan.FromMilliseconds(400);
+
+    private readonly DispatcherTimer _saveTimer;
+    private bool _saveDirty;
 
     private AppSettings _settings = new();
     private ChartBar? _hoveredBar;
@@ -120,6 +128,9 @@ public sealed partial class MainViewModel : ObservableObject
         // Tek saat: bildirim süreleri, hatırlatıcılar, odak sayacı, son tarih metinleri, gece yarısı geçişi.
         _clock = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
         _clock.Tick += OnClockTick;
+
+        _saveTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = SaveDelay };
+        _saveTimer.Tick += OnSaveTimerTick;
 
         _loc.PropertyChanged += OnLanguageChanged;
     }
@@ -212,9 +223,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     public bool IsCalendarView => ChartMode == ChartMode.Calendar;
 
-    public ObservableCollection<CyberTask> ActiveTasks { get; } = [];
+    public BulkObservableCollection<CyberTask> ActiveTasks { get; } = [];
 
-    public ObservableCollection<CyberTask> CompletedTasks { get; } = [];
+    public BulkObservableCollection<CyberTask> CompletedTasks { get; } = [];
 
     /// <summary>Arama + kategori + akıllı liste filtresi ve sıralama uygulanmış görünüm.</summary>
     public ListCollectionView ActiveView { get; }
@@ -396,17 +407,17 @@ public sealed partial class MainViewModel : ObservableObject
             }
         }
 
-        foreach (var task in active)
+        // Toplu yükleme: tek "Reset" bildirimi → görünüm bir kez sıralar/filtreler, liste bir kez oluşturulur
+        // (öğe başına Add bildirimi binlerce görevde açılışı saniyelerce uzatıyordu).
+        // Not: DeferRefresh kullanılamaz; ertelenmişken kaynak koleksiyonun değişmesine izin vermiyor.
+        var completed = data.Tasks.Where(static t => t.IsCompleted).OrderByDescending(static t => t.CompletedAt).ToList();
+        foreach (var task in active.Concat(completed))
         {
             UpdateDerivedState(task, now);
-            ActiveTasks.Add(task);
         }
 
-        foreach (var task in data.Tasks.Where(static t => t.IsCompleted).OrderByDescending(static t => t.CompletedAt))
-        {
-            UpdateDerivedState(task, now);
-            CompletedTasks.Add(task);
-        }
+        ActiveTasks.AddRange(active);
+        CompletedTasks.AddRange(completed);
 
         _initialized = true;
         OnTasksChanged();
@@ -434,6 +445,9 @@ public sealed partial class MainViewModel : ObservableObject
             await SaveAsync();
         }
 
+        // Ertelenmiş kayıt varsa beklemeden yaz, sonra kuyruktaki yazmaların bitmesini bekle.
+        _saveTimer.Stop();
+        await SaveNowAsync();
         await _storage.WhenIdleAsync();
     }
 
@@ -2032,29 +2046,67 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// UI thread'inde anlık görüntü alıp diske asenkron yazar.
-    /// Hata yutulmaz; başlıktaki kırmızı hata satırında gösterilir.
+    /// Kaydı planlar: art arda gelen değişiklikler (tamamla, ilerleme, alt görev…) <see cref="SaveDelay"/> içinde
+    /// tek yazıma toplanır. Kayıp yalnızca süreç zorla öldürülürse ve en fazla bu kadar sürelik değişiklik olabilir;
+    /// kapanışta (<see cref="ShutdownAsync"/>) ve oturum kapanırken (<see cref="FlushNow"/>) bekleyen kayıt hemen yazılır.
     /// </summary>
-    private async Task SaveAsync()
+    private Task SaveAsync()
     {
         if (_persistenceDisabled)
+        {
+            return Task.CompletedTask;
+        }
+
+        _saveDirty = true;
+        _saveTimer.Stop();
+        _saveTimer.Start();
+        return Task.CompletedTask;
+    }
+
+    private void OnSaveTimerTick(object? sender, EventArgs e)
+    {
+        _saveTimer.Stop();
+        _ = SaveNowAsync(); // hatalar SaveNowAsync içinde UI'a yansıtılır
+    }
+
+    /// <summary>
+    /// Windows oturumu kapanırken: bekleyen kaydı UI thread'inde senkron yazar
+    /// (async beklemeye zaman kalmayabilir).
+    /// </summary>
+    public void FlushNow()
+    {
+        _saveTimer.Stop();
+        if (!_saveDirty || _persistenceDisabled)
         {
             return;
         }
 
-        var snapshot = new CyberData
+        _saveDirty = false;
+        try
         {
-            NextTaskNumber = _nextTaskNumber,
-            Settings = _settings,
-            Templates = [.. Templates],
-            Tasks = [.. ActiveTasks, .. CompletedTasks],
-            Days =
-            [
-                .. _daysByDate.Values
-                    .Where(static d => d.Entries.Count > 0 || d.HoursWorked > 0 || d.CompletedCount > 0)
-                    .OrderBy(static d => d.Date),
-            ],
-        };
+            _storage.Save(CreateSnapshot());
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _saveDirty = true;
+            ErrorMessage = _loc.Format("Err_SaveFailed", ex.Message);
+            _errorIsFromSave = true;
+        }
+    }
+
+    /// <summary>
+    /// UI thread'inde anlık görüntü alıp diske asenkron yazar.
+    /// Hata yutulmaz; başlıktaki kırmızı hata satırında gösterilir (ve kayıt "bekliyor" olarak kalır).
+    /// </summary>
+    private async Task SaveNowAsync()
+    {
+        if (_persistenceDisabled || !_saveDirty)
+        {
+            return;
+        }
+
+        _saveDirty = false;
+        var snapshot = CreateSnapshot();
 
         try
         {
@@ -2067,10 +2119,25 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            _saveDirty = true; // bir sonraki değişiklikte / kapanışta yeniden denenir
             ErrorMessage = _loc.Format("Err_SaveFailed", ex.Message);
             _errorIsFromSave = true;
         }
     }
+
+    private CyberData CreateSnapshot() => new()
+    {
+        NextTaskNumber = _nextTaskNumber,
+        Settings = _settings,
+        Templates = [.. Templates],
+        Tasks = [.. ActiveTasks, .. CompletedTasks],
+        Days =
+        [
+            .. _daysByDate.Values
+                .Where(static d => d.Entries.Count > 0 || d.HoursWorked > 0 || d.CompletedCount > 0)
+                .OrderBy(static d => d.Date),
+        ],
+    };
 
     /// <summary>Aktif liste sıralaması. Eşitlikte eklenme zamanı (kararlı sıra).</summary>
     private sealed class TaskComparer(SortMode mode) : IComparer

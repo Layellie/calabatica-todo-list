@@ -89,9 +89,8 @@ public sealed partial class MainViewModel : ObservableObject
         _selectedStartupOption = OptionSets.OnOff[1];
         _calendarMonth = new DateOnly(DateTime.Today.Year, DateTime.Today.Month, 1);
 
-        var culture = _loc.Culture;
-        WeekdayHeaders = new ObservableCollection<string>(
-            RecurrenceRules.MondayFirst.Select(d => culture.DateTimeFormat.GetAbbreviatedDayName(d).ToUpper(culture)));
+        WeekdayHeaders = [];
+        RefreshWeekdayHeaders();
 
         SmartViews =
         [
@@ -1395,12 +1394,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         UpdateQuickAddPreview();
 
-        var culture = _loc.Culture;
-        WeekdayHeaders.Clear();
-        foreach (var day in RecurrenceRules.MondayFirst)
-        {
-            WeekdayHeaders.Add(culture.DateTimeFormat.GetAbbreviatedDayName(day).ToUpper(culture));
-        }
+        RefreshWeekdayHeaders();
 
         if (_lastUpdateResult is { } result)
         {
@@ -1481,11 +1475,26 @@ public sealed partial class MainViewModel : ObservableObject
         SelectedSortOption = OptionSets.Find(OptionSets.SortModes, _settings.SortMode);
         ActiveView.CustomSort = new TaskComparer(_settings.SortMode);
 
+        // Kayıtlı dil burada uygulanıyor ama _initialized=false olduğundan OnLanguageChanged erken dönüyor:
+        // dile bağlı listeyi elle yenile (yoksa İngilizce açılışta takvim başlıkları Türkçe kalıyordu).
+        RefreshWeekdayHeaders();
+
         SelectedThemeOption = OptionSets.Find(OptionSets.Themes, _settings.Theme);
         CurrentTheme = ThemePalette.Get(_settings.Theme);
         SelectedTrayOption = OptionSets.Find(OptionSets.OnOff, _settings.MinimizeToTray);
         SelectedAutoUpdateOption = OptionSets.Find(OptionSets.OnOff, _settings.AutoCheckUpdates);
         OnPropertyChanged(nameof(MinimizeToTray));
+    }
+
+    /// <summary>Takvim gün başlıkları (Pzt'den başlar) — aktif dilin kısaltmalarıyla.</summary>
+    private void RefreshWeekdayHeaders()
+    {
+        var culture = _loc.Culture;
+        WeekdayHeaders.Clear();
+        foreach (var day in RecurrenceRules.MondayFirst)
+        {
+            WeekdayHeaders.Add(culture.DateTimeFormat.GetAbbreviatedDayName(day).ToUpper(culture));
+        }
     }
 
     private void SaveSettingsIfReady()

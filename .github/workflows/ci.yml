@@ -1,0 +1,34 @@
+# CALABATICA CI: her push ve PR'da derle + testleri çalıştır.
+# Yayın oluşturmaz (o iş release.yml'de, yalnızca v*.*.* etiketinde).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Uygulamayı derle
+        run: dotnet build CyberTodo/CyberTodo.csproj -c Release -warnaserror
+
+      - name: Kaldırıcıyı derle (uygulama paketi gerektirmeyen kurulum derlemesi)
+        run: dotnet build Installer/CalabaticaSetup.csproj -c Release -p:UninstallerOnly=true
+
+      - name: Testler (çıkış kodu = başarısız test sayısı)
+        run: dotnet run --project tests/CalabaticaTests/CalabaticaTests.csproj -c Release

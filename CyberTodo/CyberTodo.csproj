@@ -38,6 +38,8 @@
   <ItemGroup>
     <!-- Derleme anındaki depo bilgisi exe'ye gömülür; UpdateService buradan okur -->
     <AssemblyMetadata Include="GitHubRepository" Value="$(GitHubRepository)" />
+    <!-- Test çalıştırıcısı saat işini (internal) doğrudan çağırabilsin -->
+    <InternalsVisibleTo Include="CalabaticaTests" />
   </ItemGroup>
 
   <ItemGroup>

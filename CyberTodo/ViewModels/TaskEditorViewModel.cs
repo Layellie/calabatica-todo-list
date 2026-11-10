@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -125,8 +126,13 @@ public sealed partial class DayToggle : ObservableObject
     {
         Day = day;
         _isSelected = isSelected;
-        Localizer.Instance.PropertyChanged += (_, _) => OnPropertyChanged(nameof(Label));
+
+        // Zayıf abonelik: düzenleyici her açıldığında 7 çip oluşur; güçlü abonelik (+=) uygulama ömürlü
+        // Localizer üzerinden onları sonsuza kadar bellekte tutuyordu (sızıntı).
+        PropertyChangedEventManager.AddHandler(Localizer.Instance, OnLanguageChanged, string.Empty);
     }
+
+    private void OnLanguageChanged(object? sender, PropertyChangedEventArgs e) => OnPropertyChanged(nameof(Label));
 
     public DayOfWeek Day { get; }
 

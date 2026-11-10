@@ -100,7 +100,13 @@ dotnet run --project CyberTodo/CyberTodo.csproj
 
 # Build the installer -> artifacts/CALABATICA-Setup-1.0.0.exe
 ./build-installer.ps1 -Version 1.0.0
+
+# Run the tests (exit code = number of failed tests)
+dotnet run --project tests/CalabaticaTests -c Release
 ```
+
+The tests use a temporary folder, never touch your real data, the registry or the network.
+CI (`.github/workflows/ci.yml`) builds the app and runs the tests on every push and pull request.
 
 See [RELEASING.md](RELEASING.md) for versioning and the release workflow.
 
@@ -114,6 +120,7 @@ CyberTodo/              WPF app (MVVM, CommunityToolkit.Mvvm)
   MainWindow.xaml       UI (no third-party UI or chart libraries)
   TrayIconHost.cs       System tray icon and notifications
 Installer/              Themed setup program (.NET Framework 4.8)
+tests/CalabaticaTests/  Dependency-free test runner
 build-installer.ps1     Builds the app and the installer
 .github/workflows/      Release workflow (runs on version tags)
 ```
@@ -123,7 +130,9 @@ build-installer.ps1     Builds the app and the installer
 - C# 14, .NET 10, WPF, MVVM with `[ObservableProperty]` / `[RelayCommand]` source generators
 - The chart, calendar and HUD frames are drawn with plain WPF elements; no chart library
 - Glow effects are limited to two static elements to keep list rendering fast
-- Saves are serialized on the UI thread and written atomically (temp file + move)
+- Task lists are virtualized: 2,500 tasks load in about 1 second
+- Saves are coalesced (400 ms), serialized on the UI thread and written atomically (temp file + move);
+  pending changes are flushed on exit and when Windows signs out
 
 ## License
 

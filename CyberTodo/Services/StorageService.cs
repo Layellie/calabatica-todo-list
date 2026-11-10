@@ -106,11 +106,7 @@ public sealed class StorageService
                 return; // daha yeni bir kayıt zaten yazıldı
             }
 
-            string directory = Path.GetDirectoryName(FilePath)
-                ?? throw new InvalidOperationException($"Geçersiz veri yolu: {FilePath}");
-            Directory.CreateDirectory(directory);
-
-            string tempPath = FilePath + ".tmp";
+            string tempPath = PrepareTempPath();
             await File.WriteAllBytesAsync(tempPath, payload, cancellationToken).ConfigureAwait(false);
             File.Move(tempPath, FilePath, overwrite: true);
 
@@ -120,6 +116,46 @@ public sealed class StorageService
         {
             _writeGate.Release();
         }
+    }
+
+    /// <summary>
+    /// Senkron kayıt: Windows oturumu kapanırken async beklemeye zaman kalmayabilir.
+    /// Asenkron sürümle aynı kilit + sürüm sırası + atomik yazma (.tmp → Move).
+    /// Kilitteki async yazma iş parçacığı havuzunda bittiği için UI thread'inden çağrılması kilitlenme yaratmaz.
+    /// </summary>
+    public void Save(CyberData data)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+
+        byte[] payload = JsonSerializer.SerializeToUtf8Bytes(data, s_options);
+        long version = Interlocked.Increment(ref _snapshotVersion);
+
+        _writeGate.Wait();
+        try
+        {
+            if (version <= _writtenVersion)
+            {
+                return;
+            }
+
+            string tempPath = PrepareTempPath();
+            File.WriteAllBytes(tempPath, payload);
+            File.Move(tempPath, FilePath, overwrite: true);
+
+            _writtenVersion = version;
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+    }
+
+    private string PrepareTempPath()
+    {
+        string directory = Path.GetDirectoryName(FilePath)
+            ?? throw new InvalidOperationException($"Geçersiz veri yolu: {FilePath}");
+        Directory.CreateDirectory(directory);
+        return FilePath + ".tmp";
     }
 
     /// <summary>Kuyruktaki tüm yazma işlemleri bitene kadar bekler (kapanışta veri kaybını önler).</summary>

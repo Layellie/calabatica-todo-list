@@ -315,7 +315,7 @@ public sealed partial class MainViewModel
             return;
         }
 
-        IsSettingsOpen = false;
+        CloseOverlays();
         Editor = new TaskEditorViewModel(task, _time);
     }
 

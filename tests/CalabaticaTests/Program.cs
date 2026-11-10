@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows.Threading;
+using CyberTodo;
 using CyberTodo.Models;
 using CyberTodo.Services;
 using CyberTodo.ViewModels;
@@ -896,6 +897,93 @@ var thread = new Thread(() =>
 
             Check(Localizer.MissingKeys().Count == 0, "TR/EN key sets identical after new features: " + string.Join(",", Localizer.MissingKeys()));
 
+            // ══════════════ UI duman testi: gerçek pencere, ekran dışında, odak çalmadan ══════════════
+            // Tüm sekmeler/paneller açılır; WPF binding hataları toplanır (XAML değişikliklerinin güvenlik ağı).
+            // CALA_UI_SHOTS ortam değişkeni bir klasörse her ekranın PNG'si oraya yazılır (pencere göstermeden görsel kontrol).
+            _ = System.Windows.Application.Current ?? new System.Windows.Application { ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown };
+            var bindingErrors = new List<string>();
+            var bindingListener = new CollectingTraceListener(bindingErrors);
+            System.Diagnostics.PresentationTraceSources.Refresh();
+            System.Diagnostics.PresentationTraceSources.DataBindingSource.Listeners.Add(bindingListener);
+            System.Diagnostics.PresentationTraceSources.DataBindingSource.Switch.Level = System.Diagnostics.SourceLevels.Error;
+            string? shots = Environment.GetEnvironmentVariable("CALA_UI_SHOTS");
+
+            async Task Idle()
+            {
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                await Task.Delay(60);
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            }
+
+            void Shot(System.Windows.FrameworkElement element, string name)
+            {
+                if (string.IsNullOrEmpty(shots) || element.ActualWidth < 1)
+                {
+                    return;
+                }
+
+                var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap((int)element.ActualWidth, (int)element.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                bmp.Render(element);
+                var png = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
+                Directory.CreateDirectory(shots);
+                using var stream = File.Create(Path.Combine(shots, name + ".png"));
+                png.Save(stream);
+            }
+
+            var uiClock = new ManualTime(DateTime.Today.AddHours(11));
+            var uiVm = new MainViewModel(new StorageService(Path.Combine(dir, "ui", "cyber_data.json")), time: uiClock);
+            var win = new MainWindow(uiVm, tray: null)
+            {
+                ShowActivated = false,
+                ShowInTaskbar = false,
+                WindowStartupLocation = System.Windows.WindowStartupLocation.Manual,
+                Left = -32000,
+                Top = -32000,
+            };
+            win.Show();
+            await Idle();
+            foreach (string title in new[] { "Write report #work @today @17:00 !", "Gym *mon,wed,fri @today", "Read book #study ~2" })
+            {
+                uiVm.NewTaskTitle = title;
+                await uiVm.AddTaskCommand.ExecuteAsync(null);
+            }
+
+            await uiVm.StartFocusCommand.ExecuteAsync(uiVm.ActiveTasks[0]);
+            uiVm.MoveSelection(1);
+            await Idle();
+            var winRoot = (System.Windows.FrameworkElement)win.Content;
+            Shot(winRoot, "main");
+            foreach (var mode in Enum.GetValues<ChartMode>())
+            {
+                uiVm.ChartMode = mode;
+                await Idle();
+                Shot(winRoot, "tab-" + mode);
+            }
+
+            uiVm.OpenSettingsCommand.Execute(null); await Idle(); Shot(winRoot, "settings");
+            uiVm.OpenDataCommand.Execute(null); await Idle(); Shot(winRoot, "data");
+            uiVm.OpenTemplatesCommand.Execute(null); await Idle(); Shot(winRoot, "templates");
+            uiVm.CloseTemplatesCommand.Execute(null);
+            uiVm.EditTaskCommand.Execute(uiVm.ActiveTasks[1]); await Idle(); Shot(winRoot, "editor");
+            uiVm.CancelEditCommand.Execute(null);
+            uiClock.Advance(TimeSpan.FromMinutes(25)); uiVm.Tick(); await Idle(); Shot(winRoot, "break");
+
+            // Mini pencere doğrudan (MainWindow'un ShowMini'si ekrana yerleştirip etkinleştirirdi)
+            // (IsMiniMode'u değiştirmek MainWindow'un gerçek mini penceresini ekrana çıkarıp etkinleştirirdi; burada yapılmaz.)
+            var mini = new MiniWindow(uiVm) { ShowActivated = false, Left = -32000, Top = -32000 };
+            uiVm.MiniTasks.Refresh();
+            mini.Show();
+            await Idle();
+            Shot((System.Windows.FrameworkElement)mini.Content, "mini");
+
+            Check(bindingErrors.Count == 0, $"ui: no binding errors across all tabs/panels ({bindingErrors.Count})" +
+                (bindingErrors.Count > 0 ? "\n      " + string.Join("\n      ", bindingErrors.Distinct().Take(8)) : string.Empty));
+            Check(winRoot.ActualWidth > 0 && win.IsLoaded, "ui: main window loaded and laid out off-screen");
+            System.Diagnostics.PresentationTraceSources.DataBindingSource.Listeners.Remove(bindingListener);
+            mini.CloseForShutdown();
+            win.Hide();
+
             // ── Bilgi (test değil): 2500 görevlik veride bir kaydın maliyeti ──
             var big = new CyberData();
             for (int i = 1; i <= 2500; i++)
@@ -967,6 +1055,25 @@ sealed class FakeHttp : System.Net.Http.HttpMessageHandler
             : new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
         response.RequestMessage = RedirectTo is null ? request : new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, RedirectTo);
         return Task.FromResult(response);
+    }
+}
+
+/// <summary>WPF binding hata izlerini toplar.</summary>
+sealed class CollectingTraceListener(List<string> sink) : System.Diagnostics.TraceListener
+{
+    private readonly System.Text.StringBuilder _line = new();
+
+    public override void Write(string? message) => _line.Append(message);
+
+    public override void WriteLine(string? message)
+    {
+        _line.Append(message);
+        lock (sink)
+        {
+            sink.Add(_line.ToString());
+        }
+
+        _line.Clear();
     }
 }
 

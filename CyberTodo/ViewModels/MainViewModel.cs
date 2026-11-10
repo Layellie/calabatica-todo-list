@@ -123,6 +123,15 @@ public sealed partial class MainViewModel : ObservableObject
 
     private DateOnly Today => DateOnly.FromDateTime(Now);
 
+    /// <summary>Tek seferde tek panel: düzenleyici, ayarlar, şablonlar ve veri paneli birbirini kapatır (üst üste binmesin).</summary>
+    private void CloseOverlays()
+    {
+        Editor = null;
+        IsSettingsOpen = false;
+        IsTemplatesOpen = false;
+        IsDataOpen = false;
+    }
+
     // ═════════════════════════════ Yaşam döngüsü ═════════════════════════════
 
     public async Task InitializeAsync()

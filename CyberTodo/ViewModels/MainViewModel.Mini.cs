@@ -37,10 +37,7 @@ public sealed partial class MainViewModel
     [RelayCommand]
     private void ToggleMiniMode()
     {
-        Editor = null;
-        IsSettingsOpen = false;
-        IsTemplatesOpen = false;
-        IsDataOpen = false;
+        CloseOverlays();
         IsMiniMode = !IsMiniMode;
     }
 

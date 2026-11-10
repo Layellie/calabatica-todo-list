@@ -28,8 +28,7 @@ public sealed partial class MainViewModel
     [RelayCommand]
     private void OpenTemplates()
     {
-        Editor = null;
-        IsSettingsOpen = false;
+        CloseOverlays();
         IsTemplatesOpen = true;
     }
 

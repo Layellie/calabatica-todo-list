@@ -8,7 +8,7 @@
         xmlns:loc="clr-namespace:CyberTodo.Services"
         mc:Ignorable="po"
         Title="CALABATICA"
-        Icon="pack://application:,,,/Assets/calabatica.ico"
+        Icon="pack://application:,,,/CALABATICA;component/Assets/calabatica.ico"
         WindowStyle="None"
         ResizeMode="NoResize"
         SizeToContent="WidthAndHeight"

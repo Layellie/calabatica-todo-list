@@ -8,7 +8,7 @@
         xmlns:loc="clr-namespace:CyberTodo.Services"
         mc:Ignorable="po"
         Title="CALABATICA"
-        Icon="pack://application:,,,/Assets/calabatica.ico"
+        Icon="pack://application:,,,/CALABATICA;component/Assets/calabatica.ico"
         Width="1440" Height="860" MinWidth="900" MinHeight="600"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
@@ -526,7 +526,19 @@
             </DataTemplate.Triggers>
         </DataTemplate>
 
+        <!--
+            Örtük ListBoxItem stili: konteyner ilk oluşturulurken (ItemContainerStyle uygulanmadan önce) tema stilinin
+            HorizontalContentAlignment = FindAncestor(ItemsControl) bağlaması kurulmasın. Çip listesi yeniden
+            doldurulurken çıkarılan öğeler 'System.Windows.Data Error: 4' basıyordu.
+        -->
+        <Style TargetType="ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
         <Style x:Key="ChipItemStyle" TargetType="ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="BorderBrush" Value="{DynamicResource CyanBrush}" />
             <Setter Property="Margin" Value="0,0,8,6" />
             <Setter Property="Padding" Value="12,5" />

@@ -107,7 +107,7 @@ public sealed partial class MainViewModel
     [RelayCommand]
     private void OpenSettings()
     {
-        Editor = null;
+        CloseOverlays();
         IsSettingsOpen = true;
     }
 

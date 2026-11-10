@@ -30,9 +30,7 @@ public sealed partial class MainViewModel
     [RelayCommand]
     private void OpenData()
     {
-        Editor = null;
-        IsSettingsOpen = false;
-        IsTemplatesOpen = false;
+        CloseOverlays();
         RefreshBackups();
         IsDataOpen = true;
     }

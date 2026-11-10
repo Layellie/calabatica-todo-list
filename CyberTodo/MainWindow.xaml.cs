@@ -82,7 +82,14 @@ public static class Program
 
         bool startHidden = args.Any(static a => string.Equals(a, RegistryStartupRegistration.TrayArgument, StringComparison.OrdinalIgnoreCase));
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-        var window = new MainWindow(startHidden);
+        // Composition root: servisler burada kurulur; pencere ve ViewModel bunları dışarıdan alır (testte sahteleri verilir).
+        var viewModel = new MainViewModel(
+            new StorageService(),
+            new UpdateService(),
+            new RegistryStartupRegistration(),
+            new WpfFileDialogs(static () => Application.Current?.Windows.OfType<Window>().FirstOrDefault(static w => w.IsActive)),
+            new UpdateInstaller());
+        var window = new MainWindow(viewModel, new TrayIconHost(), startHidden);
 
         // UI thread'inde yakalanmamış hata: rapor yaz, bekleyen kaydı diske indir, kullanıcıya söyle, düzgün kapan.
         // Bilinmeyen bir hatadan sonra çalışmaya devam etmek veriyi tutarsız bırakabilir; bu yüzden devam edilmez.
@@ -114,7 +121,7 @@ public partial class MainWindow : Window
     private static readonly TimeSpan s_shutdownSaveTimeout = TimeSpan.FromSeconds(3);
 
     private readonly MainViewModel _viewModel;
-    private readonly TrayIconHost _tray;
+    private readonly TrayIconHost? _tray; // null: testlerde tepsi simgesi oluşturulmaz
     private bool _closeConfirmed;
     private bool _exitRequested;
     private bool _trayHintShown;
@@ -122,32 +129,31 @@ public partial class MainWindow : Window
     private CyberTask? _dragCandidate;
     private MiniWindow? _mini;
 
-    public MainWindow(bool startHidden = false)
+    /// <param name="tray">null → tepsi simgesi yok (UI testleri).</param>
+    public MainWindow(MainViewModel viewModel, TrayIconHost? tray, bool startHidden = false)
     {
         InitializeComponent();
 
-        _viewModel = new MainViewModel(
-            new StorageService(),
-            new UpdateService(),
-            new RegistryStartupRegistration(),
-            new WpfFileDialogs(() => IsVisible ? this : null),
-            new UpdateInstaller());
+        _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         DataContext = _viewModel;
 
-        _tray = new TrayIconHost();
-        _tray.ShowRequested += (_, _) => ShowFromTray();
-        _tray.ExitRequested += (_, _) => ExitApplication();
-        _tray.MiniRequested += (_, _) =>
+        _tray = tray;
+        if (_tray is not null)
         {
-            if (_viewModel.IsMiniMode)
+            _tray.ShowRequested += (_, _) => ShowFromTray();
+            _tray.ExitRequested += (_, _) => ExitApplication();
+            _tray.MiniRequested += (_, _) =>
             {
-                ShowMini(); // gizlenmişse geri getir
-            }
-            else
-            {
-                _viewModel.ToggleMiniModeCommand.Execute(null);
-            }
-        };
+                if (_viewModel.IsMiniMode)
+                {
+                    ShowMini(); // gizlenmişse geri getir
+                }
+                else
+                {
+                    _viewModel.ToggleMiniModeCommand.Execute(null);
+                }
+            };
+        }
 
         _viewModel.AttentionRequested += OnAttentionRequested;
         _viewModel.OpenUrlRequested += OnOpenUrlRequested;
@@ -159,11 +165,14 @@ public partial class MainWindow : Window
         StateChanged += OnStateChanged;
 
         // Oturum kapanırken (çıkış/yeniden başlatma): tepsiye gizleme yapılmasın, ertelenmiş kayıt hemen yazılsın.
-        Application.Current.SessionEnding += (_, _) =>
+        if (Application.Current is { } app)
         {
-            _exitRequested = true;
-            _viewModel.FlushNow();
-        };
+            app.SessionEnding += (_, _) =>
+            {
+                _exitRequested = true;
+                _viewModel.FlushNow();
+            };
+        }
 
         ApplyTheme(Resources, _viewModel.CurrentTheme);
 
@@ -212,7 +221,7 @@ public partial class MainWindow : Window
             MessageBoxImage.Error);
 
         _mini?.CloseForShutdown();
-        _tray.Dispose();
+        _tray?.Dispose();
         Application.Current.Shutdown();
     }
 
@@ -249,7 +258,7 @@ public partial class MainWindow : Window
         }
 
         await FlushAsync();
-        _tray.Dispose();
+        _tray?.Dispose();
         Application.Current.Shutdown();
     }
 
@@ -284,7 +293,7 @@ public partial class MainWindow : Window
         }
         else
         {
-            _tray.Dispose();
+            _tray?.Dispose();
             Application.Current.Shutdown();
         }
     }
@@ -321,7 +330,7 @@ public partial class MainWindow : Window
             if (!_trayHintShown)
             {
                 _trayHintShown = true;
-                _tray.Notify(Localizer.Instance["Tray_Running"]);
+                _tray?.Notify(Localizer.Instance["Tray_Running"]);
             }
 
             return;
@@ -337,7 +346,7 @@ public partial class MainWindow : Window
     private void OnClosed(object? sender, EventArgs e)
     {
         _mini?.CloseForShutdown();
-        _tray.Dispose();
+        _tray?.Dispose();
         Application.Current.Shutdown();
     }
 
@@ -403,7 +412,7 @@ public partial class MainWindow : Window
                     if (!_trayHintShown)
                     {
                         _trayHintShown = true;
-                        _tray.Notify(Localizer.Instance["Tray_Running"]);
+                        _tray?.Notify(Localizer.Instance["Tray_Running"]);
                     }
                 }
                 else
@@ -747,7 +756,7 @@ public partial class MainWindow : Window
 
         if (!IsVisible || WindowState == WindowState.Minimized)
         {
-            _tray.Notify(message);
+            _tray?.Notify(message);
         }
         else if (!IsActive)
         {

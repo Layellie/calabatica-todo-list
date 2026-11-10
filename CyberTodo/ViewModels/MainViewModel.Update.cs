@@ -82,6 +82,10 @@ public sealed partial class MainViewModel
             case UpdateCheckStatus.NotConfigured:
                 UpdateStatusText = _loc["Update_NotConfigured"];
                 break;
+            case UpdateCheckStatus.NoRelease:
+                UpdateStatusText = _loc["Update_NoRelease"];
+                UpdateBadgeText = string.Empty;
+                break;
             case UpdateCheckStatus.UpToDate:
                 UpdateStatusText = _loc.Format("Update_UpToDate", UpdateService.FormatVersion(result.Latest!.Version));
                 UpdateBadgeText = string.Empty;

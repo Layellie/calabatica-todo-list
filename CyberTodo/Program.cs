@@ -99,7 +99,7 @@ public static class Program
         // Composition root: servisler burada kurulur; pencere ve ViewModel bunları dışarıdan alır (testte sahteleri verilir).
         var viewModel = new MainViewModel(
             new StorageService(),
-            new UpdateService(),
+            benchmarkReport is null ? new UpdateService() : new UpdateService(null, UpdateService.ReadCurrentVersion()), // kıyaslama: ağa çıkma
             new RegistryStartupRegistration(),
             new WpfFileDialogs(static () => Application.Current?.Windows.OfType<Window>().FirstOrDefault(static w => w.IsActive)),
             new UpdateInstaller());

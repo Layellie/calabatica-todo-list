@@ -1,0 +1,8 @@
+# Depo içeriği her zaman LF; Windows'ta da çalışma kopyası LF (core.autocrlf'tan bağımsız).
+* text=auto eol=lf
+
+# İkili dosyalar dokunulmaz
+*.png binary
+*.ico binary
+*.exe binary
+*.zip binary

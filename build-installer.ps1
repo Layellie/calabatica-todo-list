@@ -1,4 +1,4 @@
-# CALABATICA → setup.exe
+﻿# CALABATICA → setup.exe
 # Kullanım:  ./build-installer.ps1               (csproj'daki sürüm)
 #            ./build-installer.ps1 -Version 1.1.0 [-Repository kullanici/depo]
 # Çıktı:     artifacts/CALABATICA-Setup-<sürüm>.exe  (+ artifacts/app/CALABATICA.exe)

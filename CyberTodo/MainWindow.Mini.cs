@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics;
 using System.Media;
@@ -12,7 +11,6 @@ using System.Windows.Threading;
 using CyberTodo.Models;
 using CyberTodo.Services;
 using CyberTodo.Themes;
-using CyberTodo.ViewModels;
 
 namespace CyberTodo;
 

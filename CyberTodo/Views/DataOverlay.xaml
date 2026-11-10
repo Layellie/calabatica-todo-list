@@ -78,6 +78,18 @@
 
                     <TextBlock Style="{StaticResource FieldLabel}" Text="{loc:Tr Data_Folder}" />
                     <TextBox Style="{StaticResource NeonTextBox}" FontSize="12" IsReadOnly="True" Text="{Binding BackupDirectory, Mode=OneWay}" />
+                    <!-- 400 günden eski tamamlananlar yıllık arşivde (yoksa gizli) -->
+                    <TextBlock Margin="0,6,0,0" FontSize="12" Foreground="{StaticResource GreyBrush}" TextWrapping="Wrap" Text="{Binding ArchiveText}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ArchiveText}" Value="">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
 
                     <!-- Dışa / içe aktarma -->
                     <TextBlock Style="{StaticResource FieldLabel}" Text="{loc:Tr Data_Export}" />

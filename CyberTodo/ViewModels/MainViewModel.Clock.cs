@@ -77,6 +77,7 @@ public sealed partial class MainViewModel
             _viewsDay = today;
             stateChanged = true;
             _ = CreateDailyBackupAsync(now); // tepside günlerce açık kalsa da her gün bir yedek
+            _ = ArchiveExpiredTasksAsync(now);
         }
 
         if (stateChanged)

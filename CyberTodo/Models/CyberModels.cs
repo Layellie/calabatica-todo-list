@@ -560,6 +560,17 @@ public sealed class CyberData
     public List<TaskTemplate> Templates { get; set; } = [];
 
     public List<FocusSession> FocusSessions { get; set; } = [];
+
+    /// <summary>Arşive taşınan tamamlanmış görevlerin özeti (toplam istatistikler arşivden sonra da doğru kalsın).</summary>
+    public ArchiveSummary Archive { get; set; } = new();
+}
+
+public sealed class ArchiveSummary
+{
+    public int TaskCount { get; set; }
+
+    /// <summary>Arşivlenen görevlerin odak dakikaları toplamı.</summary>
+    public int TrackedMinutes { get; set; }
 }
 
 /// <summary>

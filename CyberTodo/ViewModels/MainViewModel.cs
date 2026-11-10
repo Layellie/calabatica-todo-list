@@ -20,6 +20,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly IStartupRegistration _startup;
     private readonly TimeProvider _time;
     private readonly BackupService _backups;
+    private readonly ArchiveService _archive;
     private readonly IFileDialogs _dialogs;
     private readonly UpdateInstaller? _installer;
     private readonly Dictionary<DateOnly, DayActivity> _daysByDate = new();
@@ -45,6 +46,7 @@ public sealed partial class MainViewModel : ObservableObject
         _updates = updates ?? new UpdateService(null, UpdateService.ReadCurrentVersion());
         _startup = startup ?? new InMemoryStartupRegistration();
         _backups = new BackupService(_storage.FilePath);
+        _archive = new ArchiveService(_storage.FilePath);
         _dialogs = dialogs ?? new NullFileDialogs();
         _installer = installer;
         _versionText = UpdateService.FormatVersion(_updates.CurrentVersion);
@@ -152,6 +154,14 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 ErrorMessage = _loc.Format("Err_LoadCorrupt", result.CorruptBackupFile);
             }
+
+            if (result.NewerSchemaVersion is { } newer)
+            {
+                // Yeni sürümün dosyası: kaydetmek bilinmeyen alanları silerdi. Salt okunur çalış, kullanıcıya söyle.
+                _persistenceDisabled = true;
+                ErrorMessage = _loc.Format("Err_NewerData", newer);
+                AppLog.Warn("Load", $"data schema {newer} is newer than {CyberData.CurrentSchemaVersion}; saving disabled");
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -182,7 +192,8 @@ public sealed partial class MainViewModel : ObservableObject
 
         if (!isNew)
         {
-            _ = CreateDailyBackupAsync(now); // yüklenen hâlin günlük yedeği; hata UI'a yansır
+            _ = CreateDailyBackupAsync(now); // yüklenen hâlin günlük yedeği (anlık görüntü senkron alınır); hata UI'a yansır
+            _ = ArchiveExpiredTasksAsync(now); // yedekten SONRA: arşivlenen görevler bugünün yedeğinde de durur
         }
 
         UpdateStatusText = _updates.IsConfigured ? string.Empty : _loc["Update_NotConfigured"];
@@ -199,6 +210,8 @@ public sealed partial class MainViewModel : ObservableObject
     private void ApplyData(CyberData data, DateTime now)
     {
         _nextTaskNumber = data.NextTaskNumber;
+        _archiveSummary = data.Archive;
+        OnPropertyChanged(nameof(ArchiveText));
 
         _daysByDate.Clear();
         foreach (var day in data.Days)

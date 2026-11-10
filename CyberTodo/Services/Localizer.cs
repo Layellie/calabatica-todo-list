@@ -289,6 +289,9 @@ public sealed class Localizer : ObservableObject
         ["Mini_Empty"] = "// BUGÜN İÇİN GÖREV YOK",
         ["Mini_Idle"] = "Bir görevde ▶ ile odak başlat",
         ["Tray_Mini"] = "Mini mod",
+        ["Data_ArchiveInfo"] = "ARŞİV: {0} eski tamamlanmış görev (400 günden eski) → {1}",
+        ["Err_Archive"] = "ARŞİVLENEMEDİ (veri yerinde kaldı): {0}",
+        ["Err_NewerData"] = "VERİ DOSYASI DAHA YENİ BİR SÜRÜMDEN (şema {0}) — veri kaybı olmasın diye kayıt kapalı. Uygulamayı güncelle.",
         ["Crash_Message"] = "CALABATICA beklenmeyen bir hatayla karşılaştı ve kapanacak.\nBekleyen değişiklikler kaydedildi.\n\nHata raporu: {0}",
     };
 
@@ -566,6 +569,9 @@ public sealed class Localizer : ObservableObject
         ["Mini_Empty"] = "// NOTHING DUE TODAY",
         ["Mini_Idle"] = "Start focus on a task with ▶",
         ["Tray_Mini"] = "Mini mode",
+        ["Data_ArchiveInfo"] = "ARCHIVE: {0} old completed tasks (older than 400 days) → {1}",
+        ["Err_Archive"] = "ARCHIVING FAILED (data kept in place): {0}",
+        ["Err_NewerData"] = "DATA FILE IS FROM A NEWER VERSION (schema {0}) — saving is off to avoid data loss. Please update the app.",
         ["Crash_Message"] = "CALABATICA ran into an unexpected error and will close.\nPending changes were saved.\n\nError report: {0}",
     };
 

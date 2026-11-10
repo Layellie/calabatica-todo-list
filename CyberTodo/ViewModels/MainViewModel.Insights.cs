@@ -396,7 +396,7 @@ public sealed partial class MainViewModel
 
     private void RefreshStats()
     {
-        var (tiles, weekdays) = InsightsBuilder.BuildStats(_daysByDate, ActiveTasks.Concat(CompletedTasks), Today, _loc, FormatMinutes);
+        var (tiles, weekdays) = InsightsBuilder.BuildStats(_daysByDate, ActiveTasks.Concat(CompletedTasks), Today, _loc, FormatMinutes, _archiveSummary.TrackedMinutes);
         StatTiles.Clear();
         foreach (var tile in tiles)
         {

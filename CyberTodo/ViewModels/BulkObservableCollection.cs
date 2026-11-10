@@ -27,6 +27,34 @@ public sealed class BulkObservableCollection<T> : ObservableCollection<T>
             return;
         }
 
+        RaiseReset();
+    }
+
+    /// <summary>Eşleşen öğeleri tek Reset ile çıkarır (çok sayıda Remove bildirimi listeyi defalarca yeniden düzenlerdi).</summary>
+    public int RemoveWhere(Func<T, bool> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        CheckReentrancy();
+        int removed = 0;
+        for (int i = Items.Count - 1; i >= 0; i--)
+        {
+            if (predicate(Items[i]))
+            {
+                Items.RemoveAt(i);
+                removed++;
+            }
+        }
+
+        if (removed > 0)
+        {
+            RaiseReset();
+        }
+
+        return removed;
+    }
+
+    private void RaiseReset()
+    {
         OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));
         OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
         OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));

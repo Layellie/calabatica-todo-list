@@ -905,6 +905,86 @@ var thread = new Thread(() =>
             iv.SearchText = string.Empty;
             Check(iv.SmartViews.First(s => s.Value == SmartView.Today).Count == 4 && iv.SmartViews.First(s => s.Value == SmartView.Overdue).Count == 2, "incremental: smart-view counts still updated (08:00: 4 today, 2 overdue)");
 
+            // ══════════════ Şema geçişleri (örnek eski dosyalar) ══════════════
+            Check(SchemaMigrations.LatestVersion == CyberData.CurrentSchemaVersion, "migrations: last step matches CurrentSchemaVersion");
+            string v2Json = """
+                {"schemaVersion":2,"nextTaskNumber":3,"tasks":[
+                  {"id":"6f1f8e8e-0000-4000-8000-000000000001","number":1,"title":"Old done","estimatedHours":2.5,"isCompleted":true,"completedAt":"2025-01-02T10:00:00"},
+                  {"id":"6f1f8e8e-0000-4000-8000-000000000002","number":2,"title":"Daily","recurrence":"Daily","createdAt":"2025-01-01T09:00:00"}]}
+                """;
+            string v2Path = Path.Combine(dir, "v2.json");
+            File.WriteAllText(v2Path, v2Json);
+            var v2 = await StorageService.ReadFileAsync(v2Path);
+            Check(v2.SchemaVersion == CyberData.CurrentSchemaVersion && v2.Tasks[0].CompletionCreditHours == 2.5
+                && v2.Tasks[1].SeriesId == v2.Tasks[1].Id && v2.FocusSessions.Count == 0 && v2.Archive.TaskCount == 0,
+                "migrations: v2 file -> v3 credit, v5 series, new lists initialized");
+            var again = await StorageService.ReadFileAsync(v2Path);
+            SchemaMigrations.Apply(again);
+            Check(again.Tasks[0].CompletionCreditHours == 2.5, "migrations: re-applying on current data is a no-op");
+
+            string newerPath = Path.Combine(dir, "newer", "cyber_data.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(newerPath)!);
+            string newerJson = """{"schemaVersion":99,"nextTaskNumber":2,"futureField":{"x":1},"tasks":[{"number":1,"title":"From the future"}]}""";
+            File.WriteAllText(newerPath, newerJson);
+            var nv = new MainViewModel(new StorageService(newerPath));
+            await nv.InitializeAsync();
+            nv.NewTaskTitle = "change";
+            await nv.AddTaskCommand.ExecuteAsync(null);
+            nv.FlushNow();
+            Check(nv.ErrorMessage is not null && File.ReadAllText(newerPath) == newerJson && nv.ActiveTasks.Any(t => t.Title == "From the future"),
+                "migrations: file from a newer version opens read-only (unknown fields never overwritten)");
+            bool importRejected = false;
+            try { await StorageService.ReadFileAsync(newerPath); } catch (InvalidDataException) { importRejected = true; }
+            Check(importRejected, "migrations: importing/restoring a newer-version file is refused");
+
+            // ══════════════ Arşiv (400 günden eski tamamlananlar) ══════════════
+            string arcPath = Path.Combine(dir, "arc", "cyber_data.json");
+            var arcNow = new DateTime(2026, 11, 10, 12, 0, 0);
+            var arcData = new CyberData();
+            arcData.Tasks.Add(new CyberTask { Number = 1, Title = "Ancient", IsCompleted = true, CompletedAt = arcNow.AddDays(-700), TrackedMinutes = 30 });
+            arcData.Tasks.Add(new CyberTask { Number = 2, Title = "Old", IsCompleted = true, CompletedAt = arcNow.AddDays(-401), TrackedMinutes = 15 });
+            arcData.Tasks.Add(new CyberTask { Number = 3, Title = "Recent", IsCompleted = true, CompletedAt = arcNow.AddDays(-399) });
+            arcData.Tasks.Add(new CyberTask { Number = 4, Title = "Active" });
+            arcData.NextTaskNumber = 5;
+            await StorageService.WriteAtomicAsync(arcPath, StorageService.Serialize(arcData));
+            var av = new MainViewModel(new StorageService(arcPath), time: new ManualTime(arcNow));
+            await av.InitializeAsync();
+            for (int i = 0; i < 50 && av.CompletedTasks.Count != 1; i++) { await Task.Delay(20); } // arşiv açılışta arka planda
+            var arcFiles = new ArchiveService(arcPath).List();
+            Check(av.CompletedTasks.Select(t => t.Title).SequenceEqual(["Recent"]) && av.ActiveTasks.Single().Title == "Active",
+                "archive: tasks completed > 400 days ago leave the main data");
+            Check(arcFiles.Count == 2 && arcFiles.All(f => Path.GetFileName(f).StartsWith("completed-20")), "archive: one file per completion year: " + string.Join(",", arcFiles.Select(Path.GetFileName)));
+            var archivedTitles = new List<string>();
+            foreach (var f in arcFiles) { archivedTitles.AddRange((await StorageService.ReadFileAsync(f)).Tasks.Select(t => t.Title)); }
+            Check(archivedTitles.Order().SequenceEqual(["Ancient", "Old"]), "archive: archived tasks readable with the normal reader");
+            av.FlushNow();
+            var arcSaved = await StorageService.ReadFileAsync(arcPath);
+            Check(arcSaved.Archive.TaskCount == 2 && arcSaved.Archive.TrackedMinutes == 45 && arcSaved.Tasks.Count == 2 && av.ArchiveText.Contains('2'),
+                "archive: summary keeps totals (2 tasks, 45 focus min)");
+            av.ShowStatsCommand.Execute(null);
+            Check(av.StatTiles.Any(t => t.Value.Contains("45")), "archive: focus total in stats includes archived minutes");
+
+            // Çökme benzetimi: görev hem arşivde hem ana veride → tekrar arşivlenince kopya olmaz, sayaç şişmez.
+            var dupData = await StorageService.ReadFileAsync(arcPath);
+            dupData.Tasks.Add(new CyberTask { Id = (await StorageService.ReadFileAsync(arcFiles[^1])).Tasks[0].Id, Title = "Ancient", IsCompleted = true, CompletedAt = arcNow.AddDays(-700) });
+            await StorageService.WriteAtomicAsync(arcPath, StorageService.Serialize(dupData));
+            var av2 = new MainViewModel(new StorageService(arcPath), time: new ManualTime(arcNow));
+            await av2.InitializeAsync();
+            for (int i = 0; i < 50 && av2.CompletedTasks.Count != 1; i++) { await Task.Delay(20); }
+            av2.FlushNow();
+            int ancientCopies = 0;
+            foreach (var f in new ArchiveService(arcPath).List()) { ancientCopies += (await StorageService.ReadFileAsync(f)).Tasks.Count(t => t.Title == "Ancient"); }
+            Check(ancientCopies == 1 && (await StorageService.ReadFileAsync(arcPath)).Archive.TaskCount == 2, "archive: re-archiving after a crash creates no duplicates");
+
+            // Arşiv yazılamazsa hiçbir şey silinmez.
+            string blockedPath = Path.Combine(dir, "arc-blocked", "cyber_data.json");
+            await StorageService.WriteAtomicAsync(blockedPath, StorageService.Serialize(arcData));
+            File.WriteAllText(Path.Combine(dir, "arc-blocked", "archive"), "not a folder");
+            var bv = new MainViewModel(new StorageService(blockedPath), time: new ManualTime(arcNow));
+            await bv.InitializeAsync();
+            int archivedNow = await bv.ArchiveExpiredTasksAsync(arcNow);
+            Check(archivedNow == 0 && bv.CompletedTasks.Count == 3 && bv.ErrorMessage is not null, "archive: write failure keeps every task in place");
+
             // ══════════════ Log ══════════════
             Check(File.Exists(Path.Combine(dir, "logs", "app.log")) && File.ReadAllText(Path.Combine(dir, "logs", "app.log")).Contains("ERROR [MainViewModel]"),
                 "log: caught errors (e.g. invalid import) are written to app.log");

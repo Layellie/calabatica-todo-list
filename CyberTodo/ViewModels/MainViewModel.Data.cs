@@ -27,6 +27,53 @@ public sealed partial class MainViewModel
 
     private const string JsonFilter = "JSON (*.json)|*.json";
 
+    private ArchiveSummary _archiveSummary = new();
+
+    /// <summary>Veri panelinde: "Arşiv: 1.240 görev" (arşiv yoksa boş).</summary>
+    public string ArchiveText => _archiveSummary.TaskCount == 0
+        ? string.Empty
+        : _loc.Format("Data_ArchiveInfo", _archiveSummary.TaskCount.ToString("N0", _loc.Culture), _archive.ArchiveDirectory);
+
+    /// <summary>
+    /// <see cref="ArchiveService.KeepDays"/> günden eski tamamlanmış görevleri yıllık arşive taşır. Önce arşiv yazılır;
+    /// yazma başarısızsa hiçbir şey çıkarılmaz (veri kaybı yok), hata loglanır ve gösterilir.
+    /// </summary>
+    internal async Task<int> ArchiveExpiredTasksAsync(DateTime now)
+    {
+        if (_persistenceDisabled)
+        {
+            return 0;
+        }
+
+        var expired = ArchiveService.SelectExpired(CompletedTasks, now);
+        if (expired.Count == 0)
+        {
+            return 0;
+        }
+
+        List<CyberTask> added;
+        try
+        {
+            added = await _archive.AppendAsync(expired);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            AppLog.Error("Archive", ex);
+            ErrorMessage = _loc.Format("Err_Archive", ex.Message);
+            return 0;
+        }
+
+        var ids = expired.Select(static t => t.Id).ToHashSet();
+        CompletedTasks.RemoveWhere(t => ids.Contains(t.Id)); // tek Reset
+        _archiveSummary.TaskCount += added.Count;
+        _archiveSummary.TrackedMinutes += added.Sum(static t => t.TrackedMinutes);
+        OnPropertyChanged(nameof(ArchiveText));
+        OnTasksChanged();
+        await SaveAsync();
+        AppLog.Warn("Archive", $"{expired.Count} completed tasks moved to archive");
+        return expired.Count;
+    }
+
     [RelayCommand]
     private void OpenData()
     {

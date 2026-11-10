@@ -81,6 +81,7 @@ public static class Program
         UpdateInstaller.CleanupLeftovers(Environment.ProcessPath); // önceki güncellemeden kalan .old/.new
 
         bool startHidden = args.Any(static a => string.Equals(a, RegistryStartupRegistration.TrayArgument, StringComparison.OrdinalIgnoreCase));
+        RenderPolicy.Apply(); // ilk pencereden ÖNCE: yazılım render (varsayılan) ~115 MB tasarruf, CALABATICA_RENDER=gpu ile eski davranış
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         Themes.ThemeResources.EnsureLoaded(app);
         // Composition root: servisler burada kurulur; pencere ve ViewModel bunları dışarıdan alır (testte sahteleri verilir).
@@ -129,6 +130,11 @@ public partial class MainWindow : Window
     private Point _dragStart;
     private CyberTask? _dragCandidate;
     private MiniWindow? _mini;
+
+    /// <summary>Gizlendikten sonra bellek kırpmadan önce beklenen süre (hızlı aç-kapa kırpmayı tetiklemesin).</summary>
+    private static readonly TimeSpan s_trimDelay = TimeSpan.FromSeconds(8);
+
+    private readonly DispatcherTimer _trimTimer = new(DispatcherPriority.Background) { Interval = s_trimDelay };
 
     /// <param name="tray">null → tepsi simgesi yok (UI testleri).</param>
     public MainWindow(MainViewModel viewModel, TrayIconHost? tray, bool startHidden = false)
@@ -179,6 +185,18 @@ public partial class MainWindow : Window
         _viewModel.SetSystemHighContrast(SystemParameters.HighContrast);
         SystemParameters.StaticPropertyChanged += OnSystemParametersChanged;
         ApplyTheme(Resources, _viewModel.CurrentTheme);
+
+        // Tepside bellek kırpma: ana pencere gizli/küçültülmüş ve mini pencere kapalıyken tek seferlik.
+        _trimTimer.Tick += (_, _) =>
+        {
+            _trimTimer.Stop();
+            if (IsBackgroundIdle)
+            {
+                MemoryTrimmer.Trim();
+            }
+        };
+        IsVisibleChanged += (_, _) => EvaluateTrim();
+        EvaluateTrim(); // gizli başlangıç (--tray): pencere hiç gösterilmeyebilir
 
         // Loaded yerine: pencere tepside gizli başlasa da veri yüklensin, hatırlatıcılar çalışsın.
         Dispatcher.BeginInvoke(InitializeAfterConstruction, DispatcherPriority.Loaded);
@@ -349,6 +367,7 @@ public partial class MainWindow : Window
 
     private void OnClosed(object? sender, EventArgs e)
     {
+        _trimTimer.Stop();
         SystemParameters.StaticPropertyChanged -= OnSystemParametersChanged; // statik olay: pencereyi canlı tutmasın
         _mini?.CloseForShutdown();
         _tray?.Dispose();
@@ -359,6 +378,20 @@ public partial class MainWindow : Window
     private void OnStateChanged(object? sender, EventArgs e)
     {
         RootGrid.Margin = WindowState == WindowState.Maximized ? new Thickness(7) : new Thickness(0);
+        EvaluateTrim();
+    }
+
+    /// <summary>Kullanıcı hiçbir pencereye bakmıyor: ana pencere gizli/küçültülmüş, mini pencere görünmüyor.</summary>
+    private bool IsBackgroundIdle => (!IsVisible || WindowState == WindowState.Minimized) && (_mini is null || !_mini.IsVisible);
+
+    /// <summary>Arka plana geçildiyse kırpmayı zamanlar; öne dönüldüyse iptal eder.</summary>
+    private void EvaluateTrim()
+    {
+        _trimTimer.Stop();
+        if (IsBackgroundIdle)
+        {
+            _trimTimer.Start();
+        }
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -417,6 +450,7 @@ public partial class MainWindow : Window
         {
             _mini = new MiniWindow(_viewModel);
             ApplyTheme(_mini.Resources, _viewModel.CurrentTheme);
+            _mini.IsVisibleChanged += (_, _) => EvaluateTrim();
             _mini.HideRequested += (_, _) =>
             {
                 if (_viewModel.MinimizeToTray)

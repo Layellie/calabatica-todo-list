@@ -1049,6 +1049,20 @@ var thread = new Thread(() =>
             int archivedNow = await bv.ArchiveExpiredTasksAsync(arcNow);
             Check(archivedNow == 0 && bv.CompletedTasks.Count == 3 && bv.ErrorMessage is not null, "archive: write failure keeps every task in place");
 
+            // ══════════════ Render modu ve bellek kırpma ══════════════
+            Check(RenderPolicy.Parse(null) == RenderPreference.Software && RenderPolicy.Parse("") == RenderPreference.Software
+                && RenderPolicy.Parse("software") == RenderPreference.Software && RenderPolicy.Parse("bogus") == RenderPreference.Software
+                && RenderPolicy.Parse("gpu") == RenderPreference.Gpu && RenderPolicy.Parse("  GPU ") == RenderPreference.Gpu,
+                "render: CALABATICA_RENDER=gpu is the only way to opt out of software rendering");
+
+            static long WorkingSetMb() { using var p = System.Diagnostics.Process.GetCurrentProcess(); return p.WorkingSet64 / 1048576; }
+            static void AllocateAndRelease() { var big = new byte[160 * 1024 * 1024]; Array.Fill(big, (byte)7); GC.KeepAlive(big); }
+            AllocateAndRelease();
+            long beforeTrim = WorkingSetMb();
+            bool trimmed = MemoryTrimmer.Trim();
+            long afterTrim = WorkingSetMb();
+            Check(trimmed && afterTrim < beforeTrim - 80, $"memory trim: working set {beforeTrim} MB -> {afterTrim} MB after releasing 160 MB");
+
             // ══════════════ Log ══════════════
             Check(File.Exists(Path.Combine(dir, "logs", "app.log")) && File.ReadAllText(Path.Combine(dir, "logs", "app.log")).Contains("ERROR [MainViewModel]"),
                 "log: caught errors (e.g. invalid import) are written to app.log");
@@ -1073,6 +1087,9 @@ var thread = new Thread(() =>
             // ══════════════ UI duman testi: gerçek pencere, ekran dışında, odak çalmadan ══════════════
             // Tüm sekmeler/paneller açılır; WPF binding hataları toplanır (XAML değişikliklerinin güvenlik ağı).
             // CALA_UI_SHOTS ortam değişkeni bir klasörse her ekranın PNG'si oraya yazılır (pencere göstermeden görsel kontrol).
+            // Uygulamanın gerçek varsayılanı (yazılım render): gerçek HWND bu yolla oluşturulup tüm paneller gezilir.
+            Check(RenderPolicy.Apply(string.Empty) == RenderPreference.Software && System.Windows.Media.RenderOptions.ProcessRenderMode == System.Windows.Interop.RenderMode.SoftwareOnly,
+                "render: software is the default process render mode");
             var uiApp = System.Windows.Application.Current ?? new System.Windows.Application { ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown };
             CyberTodo.Themes.ThemeResources.EnsureLoaded(uiApp);
             var bindingErrors = new List<string>();

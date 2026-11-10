@@ -900,7 +900,8 @@ var thread = new Thread(() =>
             // ══════════════ UI duman testi: gerçek pencere, ekran dışında, odak çalmadan ══════════════
             // Tüm sekmeler/paneller açılır; WPF binding hataları toplanır (XAML değişikliklerinin güvenlik ağı).
             // CALA_UI_SHOTS ortam değişkeni bir klasörse her ekranın PNG'si oraya yazılır (pencere göstermeden görsel kontrol).
-            _ = System.Windows.Application.Current ?? new System.Windows.Application { ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown };
+            var uiApp = System.Windows.Application.Current ?? new System.Windows.Application { ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown };
+            CyberTodo.Themes.ThemeResources.EnsureLoaded(uiApp);
             var bindingErrors = new List<string>();
             var bindingListener = new CollectingTraceListener(bindingErrors);
             System.Diagnostics.PresentationTraceSources.Refresh();

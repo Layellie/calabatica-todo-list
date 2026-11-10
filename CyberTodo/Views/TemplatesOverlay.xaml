@@ -1,0 +1,82 @@
+<UserControl x:Class="CyberTodo.Views.TemplatesOverlay"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:po="http://schemas.microsoft.com/winfx/2006/xaml/presentation/options"
+    xmlns:local="clr-namespace:CyberTodo"
+    xmlns:models="clr-namespace:CyberTodo.Models"
+    xmlns:loc="clr-namespace:CyberTodo.Services"
+    mc:Ignorable="po">
+    <Grid>
+        <local:ChamferFrame Fill="{StaticResource BackdropBrush}" Chamfer="30" Corners="All" />
+        <Grid>
+            <Grid.LayoutTransform>
+                <ScaleTransform ScaleX="{Binding UiScale}" ScaleY="{Binding UiScale}" />
+            </Grid.LayoutTransform>
+            <Grid Width="680" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <local:ChamferFrame Fill="{StaticResource PanelBrush}" Stroke="{DynamicResource YellowBrush}"
+                                    StrokeThickness="2" Chamfer="20" Corners="TopLeft, BottomRight" />
+                <StackPanel Margin="28,22,28,24">
+                    <TextBlock FontSize="22" FontWeight="Bold" Foreground="{DynamicResource YellowBrush}" Text="{loc:Tr Templates_Button}" />
+                    <Rectangle Height="1" Margin="0,10,0,10" Fill="{DynamicResource YellowDimBrush}" />
+                    <TextBlock FontSize="12" FontStyle="Italic" Foreground="{StaticResource GreyBrush}" TextWrapping="Wrap" Text="{loc:Tr Template_Help}" />
+
+                    <Grid Margin="0,12,0,0">
+                        <Grid.InputBindings>
+                            <KeyBinding Key="Return" Command="{Binding CreateTemplateCommand}" />
+                        </Grid.InputBindings>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox Style="{StaticResource NeonTextBox}" MaxLength="60" Tag="{loc:Tr Template_NameHint}"
+                                 Text="{Binding NewTemplateName, UpdateSourceTrigger=PropertyChanged}" />
+                        <Button Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource AddButton}"
+                                Content="{loc:Tr Template_Create}" Command="{Binding CreateTemplateCommand}" />
+                    </Grid>
+
+                    <ScrollViewer Margin="0,16,0,0" MaxHeight="360" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                                  Focusable="False" RenderOptions.EdgeMode="Aliased">
+                        <ItemsControl Focusable="False" ItemsSource="{Binding Templates}" RenderOptions.EdgeMode="Unspecified">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type models:TaskTemplate}">
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock VerticalAlignment="Center" FontSize="16" Foreground="{DynamicResource CyanBrush}" TextTrimming="CharacterEllipsis">
+                                            <Run Text="⧉ " /><Run Text="{Binding Name, Mode=OneWay}" /><Run Text="  " /><Run Foreground="{StaticResource GreyBrush}" FontSize="12" Text="{Binding Items.Count, Mode=OneWay, StringFormat='[{0}]'}" />
+                                        </TextBlock>
+                                        <Button Grid.Column="1" Style="{StaticResource SmallButton}" Content="{loc:Tr Template_Apply}"
+                                                Command="{Binding DataContext.ApplyTemplateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}" />
+                                        <Button Grid.Column="2" Style="{StaticResource DeleteIconButton}" Content="✕" AutomationProperties.Name="{loc:Tr Tip_Delete}" ToolTip="{loc:Tr Tip_Delete}"
+                                                Command="{Binding DataContext.DeleteTemplateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <TextBlock Margin="0,4,0,0" FontSize="13" Foreground="{StaticResource GreyBrush}" Text="{loc:Tr Templates_Empty}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Templates.Count}" Value="0">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <Button Margin="0,18,0,0" HorizontalAlignment="Right" Style="{StaticResource ChamferButton}"
+                            Content="{loc:Tr Btn_Close}" Command="{Binding CloseTemplatesCommand}" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

@@ -82,6 +82,7 @@ public static class Program
 
         bool startHidden = args.Any(static a => string.Equals(a, RegistryStartupRegistration.TrayArgument, StringComparison.OrdinalIgnoreCase));
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        Themes.ThemeResources.EnsureLoaded(app);
         // Composition root: servisler burada kurulur; pencere ve ViewModel bunları dışarıdan alır (testte sahteleri verilir).
         var viewModel = new MainViewModel(
             new StorageService(),
